@@ -115,7 +115,11 @@ impl ProcessMonitor {
                         .or_insert_with(|| ProcessStaticInfo {
                             name: data.name.clone(),
                             command: data.cmd.join(" "),
-                            user: data.user_id.unwrap_or_else(|| "-".to_string()),
+                            user: data
+                            .user_id
+                            .as_deref()
+                            .map(super::sid_name::friendly_name)
+                            .unwrap_or_else(|| "-".to_string()),
                         });
 
                 ProcessInfo {
@@ -146,6 +150,8 @@ impl ProcessMonitor {
             ProcessStatus::Run => "Running",
             ProcessStatus::Sleep => "Sleeping",
             ProcessStatus::Idle => "Idle",
+            // A process stopped by a signal, e.g. suspended via SIGSTOP
+            ProcessStatus::Stop => "Stopped",
             _ => "Unknown",
         }
         .to_string()
