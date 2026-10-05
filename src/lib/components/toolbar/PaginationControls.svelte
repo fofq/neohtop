@@ -3,6 +3,7 @@
   import { settingsStore } from "$lib/stores/index";
   import { overlayStore } from "$lib/stores/overlay";
   import { ITEMS_PER_PAGE_OPTIONS } from "$lib/constants";
+  import { t } from "$lib/i18n";
   import { onDestroy } from "svelte";
 
   export let itemsPerPage: number;
@@ -108,7 +109,7 @@
       class:active={isExpanded}
       on:click={toggleExpanded}
     >
-      {itemsPerPage} per page
+      {$t("pagination.perPage", { count: itemsPerPage })}
     </button>
 
     {#if isExpanded}
@@ -118,7 +119,7 @@
         on:click={() => overlayStore.close()}
         on:keydown={(e) => e.key === "Escape" && overlayStore.close()}
         role="dialog"
-        aria-label="Pagination controls"
+        aria-label={$t("pagination.ariaLabel")}
         tabindex="-1"
       >
         <div class="touchbar-horizontal-options">
@@ -152,8 +153,15 @@
       «
     </button>
     <div class="page-info">
-      <span>Page {currentPage} of {totalPages}</span>
-      <span class="results-info">({totalResults} processes)</span>
+      <span
+        >{$t("pagination.pageOf", {
+          current: currentPage,
+          total: totalPages,
+        })}</span
+      >
+      <span class="results-info"
+        >{$t("pagination.results", { count: totalResults })}</span
+      >
     </div>
     <button
       class="btn-page"

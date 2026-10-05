@@ -13,7 +13,17 @@ function createSettingsStore() {
         if (stored) {
           try {
             const config = JSON.parse(stored);
-            set({ ...DEFAULT_CONFIG, ...config });
+            // Deep-merge nested groups so configs stored by older versions
+            // pick up new defaults (e.g. appearance.highlighting).
+            set({
+              ...DEFAULT_CONFIG,
+              ...config,
+              appearance: {
+                ...DEFAULT_CONFIG.appearance,
+                ...config.appearance,
+              },
+              behavior: { ...DEFAULT_CONFIG.behavior, ...config.behavior },
+            });
           } catch (e) {
             console.error("Failed to parse stored config:", e);
             set(DEFAULT_CONFIG);

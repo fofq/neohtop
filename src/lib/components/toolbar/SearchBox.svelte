@@ -1,5 +1,6 @@
 <script lang="ts">
   import { overlayStore } from "$lib/stores/overlay";
+  import { t } from "$lib/i18n";
   import { onDestroy, onMount } from "svelte";
 
   export let searchTerm: string;
@@ -8,7 +9,7 @@
   let overlayElement: HTMLDivElement;
   let searchInputElement: HTMLInputElement;
   let placeholderIndex = 0;
-  let placeholderInterval: NodeJS.Timeout;
+  let placeholderInterval: ReturnType<typeof setInterval>;
 
   $: showHelp = $overlayStore === "searchHelp";
   $: hasActiveSearch = searchTerm.trim().length > 0;
@@ -16,53 +17,53 @@
   const searchExamples = [
     {
       query: "systemd, dbus",
-      description: "Multiple terms (comma-separated)",
+      descriptionKey: "search.exampleMulti",
       type: "multi",
     },
     {
       query: "d$",
-      description: "Processes ending with 'd' (daemons)",
+      descriptionKey: "search.exampleDaemons",
       type: "regex",
     },
     {
       query: "^kernel",
-      description: "Kernel processes",
+      descriptionKey: "search.exampleKernel",
       type: "regex",
     },
     {
       query: "ssh.*server",
-      description: "SSH server processes",
+      descriptionKey: "search.exampleSsh",
       type: "regex",
     },
     {
       query: "1234",
-      description: "Search by PID",
+      descriptionKey: "search.examplePid",
       type: "pid",
     },
     {
       query: "python, node, nginx",
-      description: "Find web/app server processes",
+      descriptionKey: "search.exampleWeb",
       type: "multi",
     },
     {
       query: "docker, containerd",
-      description: "Container processes",
+      descriptionKey: "search.exampleContainers",
       type: "multi",
     },
     {
       query: "gnome, plasma",
-      description: "Desktop environment processes",
+      descriptionKey: "search.exampleDesktop",
       type: "multi",
     },
   ];
 
-  const placeholders = [
-    "Search processes...",
-    "Try: systemd, dbus",
-    "Try: d$ (daemons)",
-    "Try: ^kernel (regex)",
-    "Search by name, command, or PID",
-    "Try: docker, nginx",
+  $: placeholders = [
+    $t("search.placeholder"),
+    $t("search.tryMulti"),
+    $t("search.tryDaemons"),
+    $t("search.tryRegex"),
+    $t("search.tryName"),
+    $t("search.tryDocker"),
   ];
 
   function rotatePlaceholder() {
@@ -181,7 +182,7 @@
     />
     {#if searchTerm}
       <button class="btn-clear" on:click={() => (searchTerm = "")}>
-        Clear
+        {$t("search.clear")}
       </button>
     {/if}
   </div>
@@ -191,7 +192,7 @@
       class="touchbar-full-overlay"
       bind:this={overlayElement}
       role="dialog"
-      aria-label="Search help overlay"
+      aria-label={$t("search.ariaLabel")}
     >
       <div class="search-help-content">
         <div class="enhanced-search-input">
@@ -209,14 +210,14 @@
               class="overlay-clear-btn"
               on:click={() => (searchTerm = "")}
             >
-              Clear
+              {$t("search.clear")}
             </button>
           {/if}
         </div>
 
         <div class="help-sections">
           <div class="examples-section">
-            <span class="section-label">Examples:</span>
+            <span class="section-label">{$t("search.examples")}</span>
             <div class="examples-grid">
               {#each searchExamples.slice(0, 5) as example}
                 <button
@@ -225,7 +226,7 @@
                   class:multi={example.type === "multi"}
                   class:pid={example.type === "pid"}
                   on:click|stopPropagation={() => useExample(example.query)}
-                  title={example.description}
+                  title={$t(example.descriptionKey)}
                 >
                   {example.query}
                 </button>
@@ -234,12 +235,12 @@
           </div>
 
           <div class="regex-section">
-            <span class="section-label">Regex:</span>
+            <span class="section-label">{$t("search.regex")}</span>
             <div class="regex-tips">
-              <code>^</code><span>start</span>
-              <code>$</code><span>end</span>
-              <code>.*</code><span>any</span>
-              <code>\d+</code><span>numbers</span>
+              <code>^</code><span>{$t("search.tipStart")}</span>
+              <code>$</code><span>{$t("search.tipEnd")}</span>
+              <code>.*</code><span>{$t("search.tipAny")}</span>
+              <code>\d+</code><span>{$t("search.tipNumbers")}</span>
             </div>
           </div>
         </div>
@@ -250,7 +251,7 @@
 
 <style>
   .search-box {
-    width: 240px;
+    width: 200px;
     position: relative;
   }
 

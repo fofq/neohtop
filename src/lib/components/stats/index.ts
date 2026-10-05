@@ -7,3 +7,4 @@ export { default as NetworkPanel } from "./NetworkPanel.svelte";
 export { default as PanelHeader } from "./PanelHeader.svelte";
 export { default as ProgressBar } from "./ProgressBar.svelte";
 export { default as StatItem } from "./StatItem.svelte";
+export { default as PerformanceChart } from "./PerformanceChart.svelte";

@@ -10,6 +10,7 @@
   } from "@fortawesome/free-solid-svg-icons";
   import { platform } from "@tauri-apps/plugin-os";
   import { THEME_GROUPS } from "$lib/constants";
+  import { t } from "$lib/i18n";
   import { onDestroy } from "svelte";
 
   let containerElement: HTMLDivElement;
@@ -32,21 +33,30 @@
       : []),
   ];
 
+  // The strip covers the whole toolbar row (single-row layout is
+  // guaranteed by the window's minimum width), positioned over
+  // .toolbar-content with offsets relative to the theme button container
   function updateOverlayPosition() {
     if (overlayElement && containerElement) {
       const toolbarContent = containerElement.closest(".toolbar-content");
       if (toolbarContent) {
         const toolbarRect = toolbarContent.getBoundingClientRect();
         const containerRect = containerElement.getBoundingClientRect();
-
         const leftOffset = containerRect.left - toolbarRect.left;
         const rightOffset = toolbarRect.right - containerRect.right;
         const topOffset = containerRect.top - toolbarRect.top;
-
         overlayElement.style.left = `-${leftOffset}px`;
         overlayElement.style.right = `-${rightOffset}px`;
         overlayElement.style.top = `-${topOffset}px`;
       }
+    }
+  }
+
+  /** Vertical wheel scrolls the swatch strip horizontally */
+  function handleWheel(event: WheelEvent) {
+    if (optionsContainer) {
+      optionsContainer.scrollLeft += event.deltaY + event.deltaX;
+      event.preventDefault();
     }
   }
 
@@ -95,7 +105,9 @@
     if (
       showMenu &&
       containerElement &&
-      !containerElement.contains(event.target as Node)
+      overlayElement &&
+      !containerElement.contains(event.target as Node) &&
+      !overlayElement.contains(event.target as Node)
     ) {
       overlayStore.close();
     }
@@ -133,7 +145,7 @@
     class="theme-button"
     class:active={showMenu}
     on:click={toggleThemeMenu}
-    aria-label="Toggle theme menu"
+    aria-label={$t("theme.ariaToggle")}
   >
     <div class="current-theme">
       <div class="theme-preview" style:background={$themeStore.colors.base}>
@@ -160,70 +172,79 @@
     </span>
   </button>
 
+  {#snippet themeStrip()}
+    {#if canScrollLeft}
+      <button
+        class="scroll-chevron scroll-left"
+        on:click|stopPropagation={scrollLeft}
+      >
+        <Fa icon={faChevronLeft} />
+      </button>
+    {/if}
+
+    <div
+      class="touchbar-horizontal-options"
+      bind:this={optionsContainer}
+      on:scroll={updateScrollButtons}
+    >
+      {#each themeGroups as group}
+        {#each group.themes as themeName}
+          {@const theme = themes[themeName]}
+          <button
+            class="touchbar-option"
+            class:active={$themeStore.name === theme.name}
+            on:click|stopPropagation={() => selectTheme(theme.name)}
+            title={theme.label}
+          >
+            <div class="theme-preview" style:background={theme.colors.base}>
+              <div
+                class="preview-color"
+                style:background={theme.colors.blue}
+              ></div>
+              <div
+                class="preview-color"
+                style:background={theme.colors.red}
+              ></div>
+              <div
+                class="preview-color"
+                style:background={theme.colors.green}
+              ></div>
+            </div>
+            <span class="theme-label">{theme.label}</span>
+          </button>
+        {/each}
+      {/each}
+    </div>
+
+    {#if canScrollRight}
+      <button
+        class="scroll-chevron scroll-right"
+        on:click|stopPropagation={scrollRight}
+      >
+        <Fa icon={faChevronRight} />
+      </button>
+    {/if}
+  {/snippet}
+
   {#if showMenu}
+    <!-- The strip covers the toolbar row itself (original touchbar
+         design); the window's minimum width guarantees a single row -->
     <div
       class="touchbar-full-overlay"
       bind:this={overlayElement}
       on:click={() => overlayStore.close()}
+      on:wheel|preventDefault={handleWheel}
       on:keydown={(e) => e.key === "Escape" && overlayStore.close()}
       role="dialog"
-      aria-label="Theme selection"
+      aria-label={$t("theme.ariaSelection")}
       tabindex="-1"
     >
-      {#if canScrollLeft}
-        <button
-          class="scroll-chevron scroll-left"
-          on:click|stopPropagation={scrollLeft}
-        >
-          <Fa icon={faChevronLeft} />
-        </button>
-      {/if}
-
-      <div
-        class="touchbar-horizontal-options"
-        bind:this={optionsContainer}
-        on:scroll={updateScrollButtons}
-      >
-        {#each themeGroups as group}
-          {#each group.themes as themeName}
-            {@const theme = themes[themeName]}
-            <button
-              class="touchbar-option"
-              class:active={$themeStore.name === theme.name}
-              on:click|stopPropagation={() => selectTheme(theme.name)}
-              title={theme.label}
-            >
-              <div class="theme-preview" style:background={theme.colors.base}>
-                <div
-                  class="preview-color"
-                  style:background={theme.colors.blue}
-                ></div>
-                <div
-                  class="preview-color"
-                  style:background={theme.colors.red}
-                ></div>
-                <div
-                  class="preview-color"
-                  style:background={theme.colors.green}
-                ></div>
-              </div>
-              <span class="theme-label">{theme.label}</span>
-            </button>
-          {/each}
-        {/each}
-      </div>
-
-      {#if canScrollRight}
-        <button
-          class="scroll-chevron scroll-right"
-          on:click|stopPropagation={scrollRight}
-        >
-          <Fa icon={faChevronRight} />
-        </button>
-      {/if}
+      {@render themeStrip()}
     </div>
   {/if}
 </div>
+
+<svelte:window on:resize={() => showMenu && updateOverlayPosition()} />
 
 <style>
   .theme-switcher {
@@ -262,8 +283,10 @@
   }
 
   .touchbar-full-overlay {
+    /* The strip replaces the toolbar row: window minimum width (1366px)
+       guarantees the toolbar is a single row, so absolute positioning
+       over .toolbar-content can never clip or stack-fight the table */
     position: absolute;
-    top: -0px;
     height: 44px;
     background: var(--mantle);
     border: none;

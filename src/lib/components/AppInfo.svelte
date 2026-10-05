@@ -4,12 +4,35 @@
   import { ThemeSwitcher } from "$lib/components";
   import { faInfo } from "@fortawesome/free-solid-svg-icons";
   import Fa from "svelte-fa";
+  import { t } from "$lib/i18n";
   import { ASCII_ART, APP_INFO } from "$lib/constants";
 
   let version = "";
   let latestVersion = "";
   let showInfo = false;
   let hasUpdate = false;
+
+  function parseVersion(version: string): number[] | null {
+    // Pre-release versions (e.g., "1.3.0-rc.1") never count as an update
+    if (version.includes("-")) return null;
+    const parts = version.split(".").map(Number);
+    if (parts.length !== 3 || parts.some((part) => !Number.isInteger(part))) {
+      return null;
+    }
+    return parts;
+  }
+
+  function isNewerVersion(latest: string, current: string): boolean {
+    const latestParts = parseVersion(latest);
+    const currentParts = parseVersion(current);
+    if (!latestParts || !currentParts) return false;
+    for (let i = 0; i < latestParts.length; i++) {
+      if (latestParts[i] !== currentParts[i]) {
+        return latestParts[i] > currentParts[i];
+      }
+    }
+    return false;
+  }
 
   async function checkLatestVersion() {
     try {
@@ -18,8 +41,9 @@
       );
       const data = await response.json();
 
-      // Extract version number from tag (e.g., "1.0.6" from "macos-nightly-1.0.6")
-      const versionMatch = data.tag_name.match(/\d+\.\d+\.\d+/);
+      // Extract version number from tag (e.g., "1.0.6" from "macos-nightly-1.0.6"),
+      // keeping any pre-release suffix (e.g., "-rc.1") so it can be rejected
+      const versionMatch = data.tag_name.match(/\d+\.\d+\.\d+(?:-[\w.]+)?/);
       if (!versionMatch) {
         console.warn(
           "Unexpected version format in latest release:",
@@ -37,8 +61,8 @@
         return;
       }
 
-      // Compare only the version numbers
-      hasUpdate = currentVersionMatch[0] !== latestVersion;
+      // Update only when the latest release is strictly newer
+      hasUpdate = isNewerVersion(latestVersion, currentVersionMatch[0]);
     } catch (error) {
       console.error("Failed to check latest version:", error);
       latestVersion = "";
@@ -63,7 +87,7 @@
     class:info-button={true}
     class:has-update={hasUpdate}
     on:click={() => (showInfo = !showInfo)}
-    aria-label="Toggle app info"
+    aria-label={$t("appInfo.ariaToggle")}
   >
     <span class="icon" class:update-available={hasUpdate}>
       <Fa icon={faInfo} />
@@ -85,17 +109,17 @@
                 target="_blank"
                 rel="noopener noreferrer"
               >
-                Update to v{latestVersion}
+                {$t("appInfo.updateTo", { version: latestVersion })}
               </a>
             {/if}
           </div>
           <div class="detail-row">
-            <span class="label">app</span>
+            <span class="label">{$t("appInfo.app")}</span>
             <span class="separator">::</span>
             <span class="value">{APP_INFO.name}</span>
           </div>
           <div class="detail-row">
-            <span class="label">source</span>
+            <span class="label">{$t("appInfo.source")}</span>
             <span class="separator">::</span>
             <a
               href={APP_INFO.github}
@@ -107,7 +131,7 @@
             </a>
           </div>
           <div class="detail-row">
-            <span class="label">stack</span>
+            <span class="label">{$t("appInfo.stack")}</span>
             <span class="separator">::</span>
             <span class="value">{APP_INFO.stack.join(", ")}</span>
           </div>

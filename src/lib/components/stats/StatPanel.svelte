@@ -13,7 +13,7 @@
 <style>
   .stat-panel {
     flex: var(--flex);
-    min-width: 125px;
+    min-width: 180px;
     background: var(--mantle);
     border-radius: 8px;
     padding: 12px;

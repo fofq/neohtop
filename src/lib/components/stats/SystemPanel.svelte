@@ -2,18 +2,19 @@
   import { faServer } from "@fortawesome/free-solid-svg-icons";
   import { PanelHeader, StatItem } from "$lib/components";
   import { formatUptime } from "$lib/utils";
+  import { t } from "$lib/i18n";
 
   export let uptime: number;
   export let loadAvg: [number, number, number];
 </script>
 
 <div class="stat-panel">
-  <PanelHeader icon={faServer} title="System" />
+  <PanelHeader icon={faServer} title={$t("stats.system")} />
   <div class="system-grid">
-    <StatItem label="Uptime" value={formatUptime(uptime)} />
-    <StatItem label="1m Load" value={loadAvg[0].toFixed(2)} />
-    <StatItem label="5m Load" value={loadAvg[1].toFixed(2)} />
-    <StatItem label="15m Load" value={loadAvg[2].toFixed(2)} />
+    <StatItem label={$t("stats.uptime")} value={formatUptime(uptime)} />
+    <StatItem label={$t("stats.load1m")} value={loadAvg[0].toFixed(2)} />
+    <StatItem label={$t("stats.load5m")} value={loadAvg[1].toFixed(2)} />
+    <StatItem label={$t("stats.load15m")} value={loadAvg[2].toFixed(2)} />
   </div>
 </div>
 

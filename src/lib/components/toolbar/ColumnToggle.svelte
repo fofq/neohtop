@@ -7,6 +7,7 @@
   } from "@fortawesome/free-solid-svg-icons";
   import { settingsStore } from "$lib/stores/index";
   import { overlayStore } from "$lib/stores/overlay";
+  import { t } from "$lib/i18n";
   import { onDestroy } from "svelte";
 
   export let columns: Array<{
@@ -27,10 +28,21 @@
   function handleColumnVisibilityChange(columnId: string, visible: boolean) {
     settingsStore.updateConfig({
       appearance: {
+        ...$settingsStore.appearance,
         columnVisibility: {
           ...$settingsStore.appearance.columnVisibility,
           [columnId]: visible,
         },
+      },
+    });
+  }
+
+  /** Clears the manually resized widths; the name column re-fits itself. */
+  function resetColumnWidths() {
+    settingsStore.updateConfig({
+      appearance: {
+        ...$settingsStore.appearance,
+        columnWidths: {},
       },
     });
   }
@@ -127,9 +139,9 @@
     class="touchbar-trigger"
     class:active={showColumnMenu}
     on:click={toggleExpanded}
-    aria-label="Toggle columns"
+    aria-label={$t("columns.ariaLabel")}
   >
-    Columns
+    {$t("columns.title")}
     <span class="icon">
       <Fa icon={showColumnMenu ? faChevronDown : faChevronRight} />
     </span>
@@ -142,7 +154,7 @@
       on:click={() => overlayStore.close()}
       on:keydown={(e) => e.key === "Escape" && overlayStore.close()}
       role="dialog"
-      aria-label="Column visibility options"
+      aria-label={$t("columns.ariaOverlay")}
       tabindex="-1"
     >
       {#if canScrollLeft}
@@ -168,13 +180,21 @@
               !column.required &&
               handleColumnVisibilityChange(column.id, !column.visible)}
             title={column.required
-              ? "Required column"
-              : `Toggle ${column.label}`}
+              ? $t("columns.required")
+              : $t("columns.toggle", { label: $t("col." + column.id) })}
           >
-            {column.label}
+            {$t("col." + column.id)}
           </button>
         {/each}
       </div>
+
+      <button
+        class="touchbar-option reset-widths"
+        on:click|stopPropagation={resetColumnWidths}
+        title={$t("columns.resetWidths")}
+      >
+        {$t("columns.resetWidths")}
+      </button>
 
       {#if canScrollRight}
         <button
@@ -358,5 +378,15 @@
   .touchbar-option.disabled {
     opacity: 0.5;
     cursor: not-allowed;
+  }
+
+  .reset-widths {
+    color: var(--subtext0);
+    border-style: dashed;
+  }
+
+  .reset-widths:hover {
+    color: var(--red);
+    border-color: var(--red);
   }
 </style>

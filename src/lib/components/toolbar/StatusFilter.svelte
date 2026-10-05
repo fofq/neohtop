@@ -3,6 +3,7 @@
   import type { AppConfig } from "$lib/types";
   import { settingsStore } from "$lib/stores/index";
   import { overlayStore } from "$lib/stores/overlay";
+  import { t } from "$lib/i18n";
   import { onDestroy } from "svelte";
 
   export let statusFilter: string = "all";
@@ -27,12 +28,9 @@
     overlayStore.close();
   }
 
-  function getCurrentLabel() {
-    return (
-      STATUS_OPTIONS.find((opt) => opt.value === statusFilter)?.label ||
-      "All Statuses"
-    );
-  }
+  $: currentStatusKey =
+    "status." +
+    (STATUS_OPTIONS.find((opt) => opt.value === statusFilter)?.value || "all");
 
   function updateOverlayPosition() {
     if (overlayElement && containerElement) {
@@ -105,7 +103,7 @@
     class:active={isExpanded}
     on:click={toggleExpanded}
   >
-    Status: {getCurrentLabel()}
+    {$t("statusFilter.label", { status: $t(currentStatusKey) })}
   </button>
 
   {#if isExpanded}
@@ -115,7 +113,7 @@
       on:click={() => overlayStore.close()}
       on:keydown={(e) => e.key === "Escape" && overlayStore.close()}
       role="dialog"
-      aria-label="Status filter options"
+      aria-label={$t("statusFilter.ariaLabel")}
       tabindex="-1"
     >
       <div class="touchbar-horizontal-options">
@@ -125,7 +123,7 @@
             class:active={option.value === statusFilter}
             on:click|stopPropagation={() => selectOption(option.value)}
           >
-            {option.label}
+            {$t("status." + option.value)}
           </button>
         {/each}
       </div>

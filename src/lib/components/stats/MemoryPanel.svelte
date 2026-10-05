@@ -2,6 +2,7 @@
   import { faMemory } from "@fortawesome/free-solid-svg-icons";
   import { PanelHeader, ProgressBar, StatItem } from "$lib/components";
   import { formatMemorySize, formatPercentage } from "$lib/utils";
+  import { t } from "$lib/i18n";
 
   export let memoryTotal: number;
   export let memoryUsed: number;
@@ -13,28 +14,28 @@
 <div class="stat-panel">
   <PanelHeader
     icon={faMemory}
-    title="Memory"
+    title={$t("stats.memory")}
     usageValue={formatPercentage(memoryPercentage)}
   />
   <div class="stats-content">
     <div class="stat-item with-progress">
       <ProgressBar
-        label="Memory usage"
+        label={$t("stats.memoryUsage")}
         value={memoryPercentage}
         labelWidth="5rem"
         valueWidth="2.5rem"
       />
     </div>
-    <StatItem label="Total" value={formatMemorySize(memoryTotal)} />
-    <StatItem label="Used" value={formatMemorySize(memoryUsed)} />
-    <StatItem label="Free" value={formatMemorySize(memoryFree)} />
+    <StatItem label={$t("stats.total")} value={formatMemorySize(memoryTotal)} />
+    <StatItem label={$t("stats.used")} value={formatMemorySize(memoryUsed)} />
+    <StatItem label={$t("stats.free")} value={formatMemorySize(memoryFree)} />
   </div>
 </div>
 
 <style>
   .stat-panel {
     flex: 2;
-    min-width: 0;
+    min-width: 230px;
     background-color: var(--mantle);
     border-radius: 6px;
     padding: 0.75rem;

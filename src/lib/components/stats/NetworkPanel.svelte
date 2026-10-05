@@ -2,16 +2,20 @@
   import { faNetworkWired } from "@fortawesome/free-solid-svg-icons";
   import { PanelHeader, StatItem } from "$lib/components";
   import { formatBytes } from "$lib/utils";
+  import { t } from "$lib/i18n";
 
   export let networkRxBytes: number;
   export let networkTxBytes: number;
 </script>
 
 <div class="stat-panel">
-  <PanelHeader icon={faNetworkWired} title="Network I/O" />
+  <PanelHeader icon={faNetworkWired} title={$t("stats.networkIO")} />
   <div class="network-stats">
-    <StatItem label="↓ Receiving" value={formatBytes(networkRxBytes)} />
-    <StatItem label="↑ Sending" value={formatBytes(networkTxBytes)} />
+    <StatItem
+      label={$t("stats.receiving")}
+      value={formatBytes(networkRxBytes)}
+    />
+    <StatItem label={$t("stats.sending")} value={formatBytes(networkTxBytes)} />
   </div>
 </div>
 

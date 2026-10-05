@@ -24,6 +24,13 @@ export const REFRESH_RATE_OPTIONS = [
   { value: 30000, label: "30s" },
 ];
 
+export const HIGHLIGHT_DURATION_OPTIONS = [
+  { value: 500, label: "0.5s" },
+  { value: 1000, label: "1s" },
+  { value: 2000, label: "2s" },
+  { value: 3000, label: "3s" },
+];
+
 export const STATUS_OPTIONS = [
   { value: "all", label: "All Statuses" },
   { value: "running", label: "Running" },

@@ -1,3 +1,12 @@
 export { default as Modal } from "./Modal.svelte";
 export { default as ProcessDetailsModal } from "./ProcessDetailsModal.svelte";
 export { default as KillProcessModal } from "./KillProcessModal.svelte";
+export { default as RestartProcessModal } from "./RestartProcessModal.svelte";
+export { default as NetworkPortsModal } from "./NetworkPortsModal.svelte";
+export { default as FileLockersModal } from "./FileLockersModal.svelte";
+export { default as ServicesModal } from "./ServicesModal.svelte";
+export { default as WindowsModal } from "./WindowsModal.svelte";
+export { default as StartupItemsModal } from "./StartupItemsModal.svelte";
+export { default as ProcessPerformanceTab } from "./ProcessPerformanceTab.svelte";
+export { default as ProcessServicesTab } from "./ProcessServicesTab.svelte";
+export { default as ProcessModulesTab } from "./ProcessModulesTab.svelte";

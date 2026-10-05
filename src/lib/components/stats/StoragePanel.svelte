@@ -2,6 +2,7 @@
   import { faHardDrive } from "@fortawesome/free-solid-svg-icons";
   import { PanelHeader, StatItem } from "$lib/components";
   import { formatBytes, formatPercentage } from "$lib/utils";
+  import { t } from "$lib/i18n";
 
   export let diskTotalBytes: number;
   export let diskUsedBytes: number;
@@ -13,13 +14,13 @@
 <div class="stat-panel">
   <PanelHeader
     icon={faHardDrive}
-    title="Storage"
+    title={$t("stats.storage")}
     usageValue={formatPercentage(diskUsagePercentage)}
   />
   <div class="stats-content">
-    <StatItem label="Total" value={formatBytes(diskTotalBytes)} />
-    <StatItem label="Used" value={formatBytes(diskUsedBytes)} />
-    <StatItem label="Free" value={formatBytes(diskFreeBytes)} />
+    <StatItem label={$t("stats.total")} value={formatBytes(diskTotalBytes)} />
+    <StatItem label={$t("stats.used")} value={formatBytes(diskUsedBytes)} />
+    <StatItem label={$t("stats.free")} value={formatBytes(diskFreeBytes)} />
   </div>
 </div>
 

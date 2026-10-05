@@ -5,6 +5,7 @@
   import { settingsStore } from "$lib/stores/index";
   import { overlayStore } from "$lib/stores/overlay";
   import { REFRESH_RATE_OPTIONS } from "$lib/constants";
+  import { t } from "$lib/i18n";
   import { onDestroy } from "svelte";
 
   export let refreshRate: number;
@@ -122,7 +123,7 @@
         on:click={() => overlayStore.close()}
         on:keydown={(e) => e.key === "Escape" && overlayStore.close()}
         role="dialog"
-        aria-label="Refresh rate controls"
+        aria-label={$t("refresh.ariaLabel")}
         tabindex="-1"
       >
         <div class="touchbar-horizontal-options">
@@ -144,7 +145,7 @@
     class="btn-action"
     class:frozen={isFrozen}
     on:click={() => (isFrozen = !isFrozen)}
-    title={isFrozen ? "Resume Updates" : "Pause Updates"}
+    title={isFrozen ? $t("refresh.resume") : $t("refresh.pause")}
   >
     {#if isFrozen}
       <Fa icon={faPlay} color="var(--red)" />

@@ -2,15 +2,22 @@
   import {
     faThumbtack,
     faInfoCircle,
+    faArrowsRotate,
+    faPause,
+    faPlay,
     faXmark,
   } from "@fortawesome/free-solid-svg-icons";
   import Fa from "svelte-fa";
   import type { Process } from "$lib/types";
+  import { t } from "$lib/i18n";
 
   export let process: Process;
   export let isPinned: boolean;
-  export let onTogglePin: (command: string) => void;
+  export let isSuspended = false;
+  export let onTogglePin: (pid: number) => void;
   export let onShowDetails: (process: Process) => void;
+  export let onRestartProcess: (process: Process) => void;
+  export let onToggleSuspend: (process: Process) => void;
   export let onKillProcess: (process: Process) => void;
 </script>
 
@@ -19,22 +26,39 @@
     <button
       class="btn-action pin-btn"
       class:pinned={isPinned}
-      on:click={() => onTogglePin(process.command)}
-      title={isPinned ? "Unpin" : "Pin"}
+      on:click={() => onTogglePin(process.pid)}
+      title={isPinned ? $t("action.unpin") : $t("action.pin")}
     >
       <Fa icon={faThumbtack} />
     </button>
     <button
       class="btn-action info-btn"
       on:click={() => onShowDetails(process)}
-      title="Show Details"
+      title={$t("action.showDetails")}
     >
       <Fa icon={faInfoCircle} />
     </button>
     <button
+      class="btn-action restart-btn"
+      on:click={() => onRestartProcess(process)}
+      title={$t("action.restartProcess")}
+    >
+      <Fa icon={faArrowsRotate} />
+    </button>
+    <button
+      class="btn-action suspend-btn"
+      class:suspended={isSuspended}
+      on:click={() => onToggleSuspend(process)}
+      title={isSuspended
+        ? $t("action.resumeProcess")
+        : $t("action.suspendProcess")}
+    >
+      <Fa icon={isSuspended ? faPlay : faPause} />
+    </button>
+    <button
       class="btn-action kill-btn"
       on:click={() => onKillProcess(process)}
-      title="End Process"
+      title={$t("action.endProcess")}
     >
       <Fa icon={faXmark} />
     </button>
@@ -54,7 +78,7 @@
     z-index: 2;
     background: var(--base);
     border-left: 1px solid var(--surface0);
-    width: 120px;
+    width: 190px;
   }
 
   .action-buttons {
@@ -115,6 +139,38 @@
 
   .info-btn::before {
     background: var(--lavender);
+  }
+
+  .restart-btn {
+    color: var(--green);
+    border: 1px solid color-mix(in srgb, var(--green) 30%, transparent);
+  }
+
+  .restart-btn:hover {
+    color: var(--base);
+    background: var(--green);
+  }
+
+  .restart-btn:hover::before {
+    opacity: 1;
+  }
+
+  .suspend-btn {
+    color: var(--yellow);
+    border: 1px solid color-mix(in srgb, var(--yellow) 30%, transparent);
+  }
+
+  .suspend-btn.suspended {
+    background: color-mix(in srgb, var(--yellow) 15%, transparent);
+  }
+
+  .suspend-btn:hover {
+    color: var(--base);
+    background: var(--yellow);
+  }
+
+  .suspend-btn:hover::before {
+    opacity: 1;
   }
 
   .kill-btn {

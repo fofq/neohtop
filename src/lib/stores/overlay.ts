@@ -8,6 +8,8 @@ type OverlayType =
   | "searchHelp"
   | "filters"
   | "status"
+  | "settings"
+  | "tools"
   | null;
 
 function createOverlayStore() {

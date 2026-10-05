@@ -1,18 +1,38 @@
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
+  import { get } from "svelte/store";
+  import { invoke } from "@tauri-apps/api/core";
   import { debounce } from "$lib/utils";
   import {
     StatsBar,
     ToolBar,
     TitleBar,
     ProcessTable,
+    ProcessHoverCard,
     ProcessDetailsModal,
     KillProcessModal,
+    RestartProcessModal,
+    NetworkPortsModal,
+    FileLockersModal,
+    ServicesModal,
+    WindowsModal,
+    StartupItemsModal,
   } from "$lib/components/index";
-  import { themeStore, settingsStore, processStore } from "$lib/stores/index";
+  import {
+    themeStore,
+    settingsStore,
+    processStore,
+    initElevation,
+  } from "$lib/stores/index";
+  import { initLocale, t } from "$lib/i18n";
   import { column_definitions } from "$lib/definitions/columns";
-  import { filterProcesses, sortProcesses } from "$lib/utils";
-  import type { Process } from "$lib/types";
+  import {
+    filterProcesses,
+    sortProcesses,
+    withAncestors,
+    buildTreeRows,
+  } from "$lib/utils";
+  import type { Process, ProcessTreeRow } from "$lib/types";
 
   $: ({
     processes,
@@ -22,19 +42,71 @@
     isLoading,
     currentPage,
     pinnedProcesses,
+    justStarted,
+    suspendedPids,
     selectedProcess,
     showInfoModal,
     showConfirmModal,
     processToKill,
     isKilling,
+    killTreeCount,
+    notice,
+    showRestartModal,
+    processToRestart,
+    isRestarting,
     isFrozen,
     sortConfig,
   } = $processStore);
 
-  let intervalId: NodeJS.Timeout;
+  let intervalId: ReturnType<typeof setInterval>;
   let lastProcessCount = 0;
   let cachedFilteredProcesses: Process[] = [];
   let cachedSortedProcesses: Process[] = [];
+
+  // "flat" = paginated list (default); "tree" = grouped by ppid, no paging.
+  let viewMode: "flat" | "tree" = "flat";
+  /**
+   * Subtrees collapsed in tree view, keyed by the root-to-node name chain
+   * (ProcessTreeRow.path). Name paths survive the PID churn of short-lived
+   * child processes, so a collapsed group stays collapsed across refreshes.
+   */
+  let collapsedPaths = new Set<string>();
+
+  function toggleExpand(path: string) {
+    const next = new Set(collapsedPaths);
+    if (next.has(path)) {
+      next.delete(path);
+    } else {
+      next.add(path);
+    }
+    collapsedPaths = next;
+  }
+
+  // Collapse-all needs every expandable path, including ones currently
+  // hidden behind collapsed nodes, so it walks a fully expanded tree.
+  function collapseAllTree() {
+    const full = buildTreeRows(
+      visibleTreeProcesses,
+      sortConfig,
+      new Set<string>(),
+      pinnedProcesses,
+    );
+    collapsedPaths = new Set(
+      full.filter((row) => row.hasChildren).map((row) => row.path),
+    );
+  }
+
+  function expandAllTree() {
+    collapsedPaths = new Set();
+  }
+
+  function toggleTreeCollapse() {
+    if (collapsedPaths.size > 0) {
+      expandAllTree();
+    } else {
+      collapseAllTree();
+    }
+  }
 
   // Initialize filters object for the new FilterToggle
   let filters = {
@@ -43,6 +115,15 @@
     runtime: { operator: ">", value: 60, enabled: false },
     status: { values: [], enabled: false },
   };
+
+  let showNetworkPorts = false;
+  let showFileLockers = false;
+  let showServices = false;
+  let showWindows = false;
+  let showStartupItems = false;
+
+  /** Rich row tooltip; driven via show()/hide() from the table events. */
+  let hoverCard: ProcessHoverCard | null = null;
 
   $: columns = column_definitions.map((col) => ({
     ...col,
@@ -75,8 +156,9 @@
     cachedFilteredProcesses = processes;
   }
 
-  // Cache sorted results to avoid re-sorting unchanged data
-  $: if (cachedFilteredProcesses && (sortConfig || pinnedProcesses.size > 0)) {
+  // Cache sorted results to avoid re-sorting unchanged data; pinned
+  // processes float to the top in pin order ahead of the sort field
+  $: if (cachedFilteredProcesses && sortConfig) {
     cachedSortedProcesses = sortProcesses(
       cachedFilteredProcesses,
       sortConfig,
@@ -91,6 +173,30 @@
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage,
   );
+
+  // Tree view: search/filter hits keep their ancestor chain visible, sort
+  // order applies to siblings within each level (pinned processes are
+  // hoisted to the top of the root level), and pagination is off.
+  let treeRows: ProcessTreeRow[] | null = null;
+  $: visibleTreeProcesses =
+    viewMode === "tree"
+      ? withAncestors(cachedFilteredProcesses, processes)
+      : [];
+  $: treeRows =
+    viewMode === "tree"
+      ? buildTreeRows(
+          visibleTreeProcesses,
+          sortConfig,
+          collapsedPaths,
+          pinnedProcesses,
+        )
+      : null;
+
+  // The current page is meaningless while paging is off; reset it so
+  // switching back to flat view never lands on an empty page.
+  $: if (viewMode === "flat" && currentPage !== 1 && currentPage > totalPages) {
+    currentPage = 1;
+  }
 
   $: {
     if (searchTerm || itemsPerPage) {
@@ -109,6 +215,48 @@
     }
   }
 
+  // --- Port watch ---
+  // Polls the backend's listening-port snapshot and toasts when one of the
+  // user's watched ports gains a listener. The timer follows the watched
+  // list (joined to a string so only real list changes restart it) and the
+  // first tick after a restart only seeds the seen-set, so ports that are
+  // already listening when the app starts never toast.
+  const PORT_WATCH_INTERVAL_MS = 5000;
+  let watchTimer: ReturnType<typeof setInterval> | null = null;
+  let watchSeen: Set<number> = new Set();
+  let watchSeeded = false;
+
+  $: watchedPortList = ($settingsStore.behavior.portsWatched ?? []).slice();
+  $: {
+    if (watchTimer !== null) clearInterval(watchTimer);
+    watchTimer = null;
+    if (watchedPortList.length > 0) {
+      watchSeeded = false;
+      watchTimer = setInterval(checkWatchedPorts, PORT_WATCH_INTERVAL_MS);
+      checkWatchedPorts();
+    }
+  }
+
+  async function checkWatchedPorts() {
+    try {
+      const ports: number[] = await invoke("get_listening_ports");
+      const now = new Set(ports);
+      if (watchSeeded) {
+        const translate = get(t);
+        for (const port of watchedPortList) {
+          if (now.has(port) && !watchSeen.has(port)) {
+            processStore.showNotice(translate("ports.watchAppeared", { port }));
+          }
+        }
+      }
+      watchSeeded = true;
+      watchSeen = now;
+    } catch {
+      // Keep the previous seen-set on transient backend failures so a
+      // hiccup doesn't mask (or duplicate) the next real transition
+    }
+  }
+
   onMount(async () => {
     try {
       await processStore.getProcesses();
@@ -119,11 +267,14 @@
     }
 
     settingsStore.init();
+    initLocale(get(settingsStore).language);
     themeStore.init();
+    initElevation();
   });
 
   onDestroy(() => {
     if (intervalId) clearInterval(intervalId);
+    if (watchTimer !== null) clearInterval(watchTimer);
   });
 </script>
 
@@ -148,13 +299,23 @@
         bind:refreshRate
         bind:isFrozen={$processStore.isFrozen}
         bind:filters
+        bind:viewMode
+        treeCollapsedAny={collapsedPaths.size > 0}
+        onToggleTreeCollapse={toggleTreeCollapse}
         {totalPages}
         totalResults={cachedFilteredProcesses.length}
         bind:columns
+        onShowNetworkPorts={() => (showNetworkPorts = true)}
+        onShowFileLockers={() => (showFileLockers = true)}
+        onShowServices={() => (showServices = true)}
+        onShowWindows={() => (showWindows = true)}
+        onShowStartupItems={() => (showStartupItems = true)}
       />
 
       {#if error}
         <div class="alert">{error}</div>
+      {:else if notice}
+        <div class="notice">{notice}</div>
       {/if}
 
       <ProcessTable
@@ -163,14 +324,35 @@
         {systemStats}
         {sortConfig}
         {pinnedProcesses}
+        {justStarted}
+        {suspendedPids}
+        {treeRows}
+        highlightDurationMs={$settingsStore.appearance.highlighting.durationMs}
+        columnWidths={$settingsStore.appearance.columnWidths}
+        onColumnWidthsCommit={(widths) =>
+          settingsStore.updateConfig({
+            appearance: { ...$settingsStore.appearance, columnWidths: widths },
+          })}
         onToggleSort={processStore.toggleSort}
         onTogglePin={processStore.togglePin}
-        onShowDetails={processStore.showProcessDetails}
+        onShowDetails={(process) => {
+          hoverCard?.hide();
+          processStore.showProcessDetails(process);
+        }}
+        onRestartProcess={processStore.confirmRestartProcess}
+        onToggleSuspend={processStore.toggleSuspend}
         onKillProcess={processStore.confirmKillProcess}
+        onKillTreeProcess={processStore.confirmKillTreeProcess}
+        onToggleExpand={toggleExpand}
+        onHoverTooltip={(process, event) =>
+          hoverCard?.show(process, event.clientX, event.clientY)}
+        onHideTooltip={() => hoverCard?.hide()}
       />
     </main>
   </div>
 {/if}
+
+<ProcessHoverCard bind:this={hoverCard} />
 
 <ProcessDetailsModal
   show={showInfoModal}
@@ -183,9 +365,37 @@
 <KillProcessModal
   show={showConfirmModal}
   process={processToKill}
+  treeCount={killTreeCount}
   {isKilling}
   onClose={processStore.closeConfirmKill}
   onConfirm={processStore.handleConfirmKill}
+/>
+
+<RestartProcessModal
+  show={showRestartModal}
+  process={processToRestart}
+  {isRestarting}
+  onClose={processStore.closeConfirmRestart}
+  onConfirm={processStore.handleConfirmRestart}
+/>
+
+<NetworkPortsModal
+  show={showNetworkPorts}
+  onClose={() => (showNetworkPorts = false)}
+/>
+
+<FileLockersModal
+  show={showFileLockers}
+  onClose={() => (showFileLockers = false)}
+/>
+
+<ServicesModal show={showServices} onClose={() => (showServices = false)} />
+
+<WindowsModal show={showWindows} onClose={() => (showWindows = false)} />
+
+<StartupItemsModal
+  show={showStartupItems}
+  onClose={() => (showStartupItems = false)}
 />
 
 <style>
@@ -217,6 +427,7 @@
     margin: 0;
     padding: 0;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial,
+      "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC",
       sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
     background-color: var(--base);
     color: var(--text);
@@ -246,6 +457,16 @@
     border: 1px solid var(--red);
     border-radius: 6px;
     color: var(--red);
+    font-size: 13px;
+  }
+
+  .notice {
+    margin: 8px;
+    padding: 8px 12px;
+    background-color: var(--surface0);
+    border: 1px solid var(--green);
+    border-radius: 6px;
+    color: var(--green);
     font-size: 13px;
   }
 

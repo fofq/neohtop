@@ -1,6 +1,7 @@
 import type { AppConfig } from "$lib/types";
 
 export const DEFAULT_CONFIG: AppConfig = {
+  language: "auto",
   appearance: {
     columnVisibility: {
       name: true,
@@ -19,10 +20,20 @@ export const DEFAULT_CONFIG: AppConfig = {
       start_time: false,
       run_time: true,
     },
+    // Manually dragged column widths; empty until the user resizes a
+    // column (the name column auto-fits from row content every launch).
+    columnWidths: {},
+    highlighting: {
+      enabled: true,
+      durationMs: 1000,
+    },
   },
   behavior: {
     itemsPerPage: 15,
     refreshRate: 3000,
     defaultStatusFilter: "all",
+    portsViewMode: "flat",
+    portsFavorites: [],
+    portsWatched: [],
   },
 };

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import SettingsMenu from "./SettingsMenu.svelte";
 </script>
 
 <div class="title-bar" data-tauri-drag-region>
@@ -6,6 +7,7 @@
     <img src="/32x32.png" alt="NeoHtop" class="app-icon" />
     <div class="neon">NeoHtop</div>
   </div>
+  <SettingsMenu />
 </div>
 
 <style>

@@ -1,8 +1,6 @@
 <script lang="ts">
   import { Modal } from "$lib/components";
   import { t } from "$lib/i18n";
-  import Fa from "svelte-fa";
-  import { faTriangleExclamation } from "@fortawesome/free-solid-svg-icons";
 
   interface Process {
     pid: number;
@@ -13,45 +11,35 @@
   export let process: Process | null = null;
   export let onClose: () => void;
   export let onConfirm: () => Promise<void>;
-  export let isKilling = false;
-  /**
-   * Estimated tree size ("N", or "1+" when unknown) shown by the
-   * kill-the-whole-tree confirmation; null = plain single kill.
-   */
-  export let treeCount: string | null = null;
+  export let isRestarting = false;
 </script>
 
 <Modal {show} title={$t("modal.confirmTitle")} maxWidth="400px" {onClose}>
   {#if process}
     <div class="confirm-content">
-      <p class="confirm-message">
-        {#if treeCount !== null}
-          <span class="tree-message">
-            <Fa icon={faTriangleExclamation} />
-            {$t("killTree.message", { count: treeCount })}
-          </span>
-        {:else}
-          {$t("kill.message")}
-        {/if}
-      </p>
+      <p class="confirm-message">{$t("restart.message")}</p>
       <div class="process-info">
         <span class="process-name">{process.name}</span>
         <span class="process-pid">{$t("modal.pid", { pid: process.pid })}</span>
       </div>
       <div class="confirm-actions">
-        <button class="btn-secondary" on:click={onClose} disabled={isKilling}>
+        <button
+          class="btn-secondary"
+          on:click={onClose}
+          disabled={isRestarting}
+        >
           {$t("modal.cancel")}
         </button>
-        <button class="btn-danger" on:click={onConfirm} disabled={isKilling}>
-          {#if isKilling}
+        <button
+          class="btn-primary"
+          on:click={onConfirm}
+          disabled={isRestarting}
+        >
+          {#if isRestarting}
             <div class="spinner"></div>
-            <span>
-              {$t(
-                treeCount !== null ? "killTree.inProgress" : "kill.inProgress",
-              )}
-            </span>
+            <span>{$t("restart.inProgress")}</span>
           {:else}
-            {$t(treeCount !== null ? "killTree.confirm" : "kill.confirm")}
+            {$t("restart.confirm")}
           {/if}
         </button>
       </div>
@@ -70,21 +58,6 @@
     color: var(--text);
     margin: 0;
     font-size: 14px;
-  }
-
-  /* Tree kill: heavier warning, hierarchy via weight and a yellow icon */
-  .tree-message {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    font-weight: 600;
-  }
-
-  .tree-message :global(svg) {
-    width: 14px;
-    height: 14px;
-    color: var(--yellow);
-    flex-shrink: 0;
   }
 
   .process-info {
@@ -126,11 +99,11 @@
     background: var(--surface1);
   }
 
-  .btn-danger {
+  .btn-primary {
     padding: 8px 16px;
     font-size: 13px;
     color: var(--base);
-    background: var(--red);
+    background: var(--blue);
     border: none;
     border-radius: 6px;
     cursor: pointer;
@@ -140,13 +113,13 @@
     gap: 8px;
   }
 
-  .btn-danger:disabled {
+  .btn-primary:disabled {
     opacity: 0.7;
     cursor: not-allowed;
   }
 
-  .btn-danger:hover {
-    background: color-mix(in srgb, var(--red) 90%, white);
+  .btn-primary:hover {
+    background: color-mix(in srgb, var(--blue) 90%, white);
   }
 
   .spinner {

@@ -2,6 +2,7 @@
   import Fa from "svelte-fa";
   import { faFilter } from "@fortawesome/free-solid-svg-icons";
   import { overlayStore } from "$lib/stores/overlay";
+  import { t } from "$lib/i18n";
   import { onDestroy } from "svelte";
 
   export let filters: {
@@ -28,11 +29,13 @@
     { value: "<", label: "<" },
   ];
 
+  // Values must stay untranslated: they are matched against the raw
+  // backend process status. Labels are derived from the value at render time.
   const statusOptions = [
-    { value: "Running", label: "Running", color: "var(--green)" },
-    { value: "Sleeping", label: "Sleeping", color: "var(--blue)" },
-    { value: "Stopped", label: "Stopped", color: "var(--red)" },
-    { value: "Zombie", label: "Zombie", color: "var(--yellow)" },
+    { value: "Running", color: "var(--green)" },
+    { value: "Sleeping", color: "var(--blue)" },
+    { value: "Stopped", color: "var(--red)" },
+    { value: "Zombie", color: "var(--yellow)" },
   ];
 
   function updateOverlayPosition() {
@@ -105,13 +108,13 @@
   }
 
   function getFilterLabel(type: keyof typeof filters): string {
-    const labels = {
-      cpu: "CPU %",
-      ram: "RAM MB",
-      runtime: "Runtime min",
-      status: "Status",
+    const labelKeys = {
+      cpu: "filters.cpu",
+      ram: "filters.ram",
+      runtime: "filters.runtime",
+      status: "filters.status",
     };
-    return labels[type];
+    return $t(labelKeys[type]);
   }
 
   function handleClickOutside(event: MouseEvent) {
@@ -153,10 +156,10 @@
     class:active={showFilters}
     class:has-filters={hasActiveFilters}
     on:click={toggleFilters}
-    aria-label="Toggle filters"
+    aria-label={$t("filters.ariaLabel")}
   >
     <Fa icon={faFilter} />
-    Filters
+    {$t("filters.title")}
     {#if hasActiveFilters}
       <span class="filter-count">{activeFilterCount}</span>
     {/if}
@@ -169,16 +172,16 @@
       on:click={() => overlayStore.close()}
       on:keydown={(e) => e.key === "Escape" && overlayStore.close()}
       role="dialog"
-      aria-label="Filter options overlay"
+      aria-label={$t("filters.ariaOverlay")}
       tabindex="-1"
     >
       <div class="filter-content">
         <div class="filter-sections">
           <!-- Numeric Filters -->
           <div class="filter-section">
-            <span class="section-label">Performance:</span>
+            <span class="section-label">{$t("filters.performance")}</span>
             <div class="filter-controls">
-              {#each [["cpu", "CPU %"], ["ram", "RAM MB"], ["runtime", "Runtime min"]] as [type, label]}
+              {#each [["cpu", "filters.cpu"], ["ram", "filters.ram"], ["runtime", "filters.runtime"]] as [type, labelKey]}
                 {@const filterKey = type as "cpu" | "ram" | "runtime"}
                 <div class="filter-control">
                   <button
@@ -186,7 +189,7 @@
                     class:active={filters[filterKey].enabled}
                     on:click|stopPropagation={() => toggleFilter(filterKey)}
                   >
-                    {label}
+                    {$t(labelKey)}
                   </button>
                   {#if filters[filterKey].enabled}
                     <select
@@ -237,7 +240,7 @@
 
           <!-- Status Filter -->
           <div class="filter-section">
-            <span class="section-label">Status:</span>
+            <span class="section-label">{$t("filters.statusSection")}</span>
             <div class="status-controls">
               {#each statusOptions as status}
                 <button
@@ -247,7 +250,7 @@
                   on:click|stopPropagation={() =>
                     updateFilter("status", "values", status.value)}
                 >
-                  {status.label}
+                  {$t("status." + status.value.toLowerCase())}
                 </button>
               {/each}
             </div>
@@ -261,16 +264,21 @@
                 on:click|stopPropagation={clearAllFilters}
               >
                 <Fa icon={faFilter} />
-                Clear All
+                {$t("filters.clearAll")}
               </button>
             {/if}
             <div class="filter-summary">
               {#if hasActiveFilters}
                 <span
-                  >{activeFilterCount} filter{activeFilterCount > 1 ? "s" : ""} active</span
+                  >{$t(
+                    activeFilterCount > 1
+                      ? "filters.activeMany"
+                      : "filters.activeOne",
+                    { count: activeFilterCount },
+                  )}</span
                 >
               {:else}
-                <span>No filters applied</span>
+                <span>{$t("filters.none")}</span>
               {/if}
             </div>
           </div>
