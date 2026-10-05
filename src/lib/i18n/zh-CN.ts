@@ -410,6 +410,8 @@ const zhCN: Record<TranslationKey, string> = {
   "ports.cat.database": "数据库",
   "ports.cat.dev": "开发",
   "ports.cat.system": "系统",
+  "ports.cat.proxy": "代理",
+  "ports.cat.mail": "邮件",
   "ports.binaryMissing": "二进制文件已被删除",
   "ports.fCpu": "CPU",
   "ports.integrity": "完整性",

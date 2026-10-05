@@ -417,6 +417,8 @@ const en = {
   "ports.cat.database": "Database",
   "ports.cat.dev": "Dev",
   "ports.cat.system": "System",
+  "ports.cat.proxy": "Proxy",
+  "ports.cat.mail": "Mail",
   "ports.binaryMissing": "Binary deleted",
   "ports.fCpu": "CPU",
   "ports.integrity": "Integrity",

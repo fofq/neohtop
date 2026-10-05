@@ -126,34 +126,192 @@
   // Hides connections without any reported traffic (listeners etc.)
   let hideIdle = false;
 
-  // --- Port categories (port-killer style): well-known local ports ---
-  type PortCategoryKey = "web" | "database" | "dev" | "system";
-  const PORT_CATEGORIES: Array<{ key: PortCategoryKey; ports: number[] }> = [
+  // --- Port categories: two-layer detection -------------------------------
+  // Layer 1 (the accuracy lever, port-killer's approach): the owning
+  // process's name — postgres on an unusual port is still a database,
+  // mihomo on a custom port is still a proxy. Layer 2 (fallback for
+  // unattributed or generically-named processes): well-known local ports.
+  type PortCategoryKey =
+    | "web"
+    | "database"
+    | "dev"
+    | "system"
+    | "proxy"
+    | "mail";
+
+  /** Process-name patterns per category, checked in order against the
+   * lowercased executable name (".exe" stripped) via startsWith — every
+   * pattern here is distinctive enough that a prefix match is meaningful
+   * (generic words like "go" or "system" are deliberately absent). */
+  const PROCESS_CATEGORIES: Array<{
+    key: PortCategoryKey;
+    patterns: string[];
+  }> = [
+    // Exact-name hits only: these words are far too generic as prefixes
     {
-      key: "web",
-      ports: [80, 443, 593, 8443, 8888],
+      key: "system",
+      patterns: [
+        "svchost",
+        "lsass",
+        "csrss",
+        "services",
+        "wininit",
+        "smss",
+        "system",
+        "spoolsv",
+        "dwm",
+        "winlogon",
+        "fontdrvhost",
+        "sihost",
+        "taskhostw",
+      ],
+    },
+    {
+      key: "proxy",
+      patterns: [
+        "mihomo",
+        "clash",
+        "v2ray",
+        "xray",
+        "sing-box",
+        "singbox",
+        "hysteria",
+        "shadowsocks",
+        "trojan-go",
+        "naive",
+        "privoxy",
+        "tinyproxy",
+        "squid",
+        "3proxy",
+        "dante",
+        "proxifier",
+        "leaf",
+        "juicity",
+        "tuic",
+      ],
     },
     {
       key: "database",
-      ports: [1433, 1521, 3306, 5432, 6379, 7474, 8086, 9042, 9200, 27017],
+      patterns: [
+        "postgres",
+        "mysql",
+        "mariadb",
+        "redis",
+        "mongo",
+        "memcached",
+        "cockroach",
+        "clickhouse",
+        "cassandra",
+        "elastic",
+        "sqlservr",
+        "oracle",
+        "influxd",
+        "rabbitmq",
+      ],
+    },
+    {
+      key: "web",
+      patterns: [
+        "nginx",
+        "apache",
+        "httpd",
+        "caddy",
+        "traefik",
+        "lighttpd",
+        "haproxy",
+        "tomcat",
+        "w3wp",
+        "frps",
+        "frpc",
+      ],
+    },
+    {
+      key: "dev",
+      patterns: [
+        "node",
+        "deno",
+        "bun",
+        "npm",
+        "pnpm",
+        "yarn",
+        "python",
+        "ruby",
+        "php",
+        "java",
+        "kotlin",
+        "scala",
+        "cargo",
+        "rustc",
+        "dotnet",
+        "vite",
+        "webpack",
+        "esbuild",
+        "parcel",
+        "dart",
+        "flutter",
+        "code",
+      ],
+    },
+  ];
+
+  const PORT_CATEGORIES: Array<{ key: PortCategoryKey; ports: number[] }> = [
+    {
+      key: "web",
+      ports: [80, 443, 593, 8080, 8081, 8443, 8888, 8880],
+    },
+    {
+      key: "database",
+      ports: [
+        1433, 1521, 3306, 5432, 5984, 6379, 7474, 8086, 9042, 9092, 9200, 11211,
+        27017,
+      ],
     },
     {
       key: "dev",
       ports: [
         3000, 3001, 3333, 4000, 4001, 4200, 5000, 5001, 5173, 5174, 7000, 8000,
-        8001, 8080, 8081, 9000, 9001, 9229, 9230,
+        8001, 9000, 9001, 9229, 9230,
       ],
     },
     {
       key: "system",
       ports: [
-        53, 88, 123, 135, 139, 389, 445, 464, 514, 636, 1900, 3268, 3269, 3389,
-        5353, 5355, 5985, 5986,
+        22, 53, 69, 88, 123, 135, 139, 161, 389, 445, 464, 514, 636, 1900, 3268,
+        3269, 3389, 5353, 5355, 5900, 5985, 5986,
       ],
     },
+    {
+      key: "proxy",
+      ports: [1080, 3128, 8118, 8388, 9090, 10808, 10809, 7890, 7891, 7897],
+    },
+    {
+      key: "mail",
+      ports: [25, 110, 143, 465, 587, 993, 995],
+    },
   ];
-  /** First matching category for a local port, or null for ordinary ports */
+
+  /** Lowercases the owning process's executable name with the extension
+   * stripped ("MIHOMO-ALPHA.EXE" → "mihomo-alpha"), or null when unknown. */
+  function normalizedProcessName(pid: number): string | null {
+    const raw = processNameByPid.get(pid);
+    if (!raw) return null;
+    return raw.toLowerCase().replace(/\.(exe|com|bat|cmd)$/, "");
+  }
+
+  /** First matching category for a connection: the owning process's name
+   * wins (exact-or-prefix hit on a distinctive pattern), then the
+   * well-known local-port table. Null for ordinary ports. */
   function categoryOf(connection: PortConnection): PortCategoryKey | null {
+    const name = normalizedProcessName(connection.pid);
+    if (name) {
+      for (const category of PROCESS_CATEGORIES) {
+        for (const pattern of category.patterns) {
+          if (name === pattern || name.startsWith(pattern)) {
+            return category.key;
+          }
+        }
+      }
+    }
     for (const category of PORT_CATEGORIES) {
       if (category.ports.includes(connection.local_port)) return category.key;
     }
@@ -3482,6 +3640,16 @@
   .port-cat.cat-system {
     color: var(--maroon);
     background: color-mix(in srgb, var(--maroon) 14%, transparent);
+  }
+
+  .port-cat.cat-proxy {
+    color: var(--sapphire);
+    background: color-mix(in srgb, var(--sapphire) 14%, transparent);
+  }
+
+  .port-cat.cat-mail {
+    color: var(--green);
+    background: color-mix(in srgb, var(--green) 14%, transparent);
   }
 
   /* Integrity level badge in the detail panel */
