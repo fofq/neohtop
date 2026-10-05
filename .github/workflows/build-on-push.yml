@@ -1,0 +1,176 @@
+name: Build on Push
+
+on:
+  push:
+    branches: [main, dev]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 1
+  CARGO_NET_RETRY: 10
+  RUSTUP_MAX_RETRIES: 10
+  RUST_BACKTRACE: 1
+
+jobs:
+  frontend-check:
+    name: Frontend Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+          cache: "npm"
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Check Frontend
+        run: npm run check
+
+      - name: Build Frontend
+        run: npm run build
+
+  cargo-check:
+    name: Cargo Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+          cache: "npm"
+
+      - name: Cache Linux Dependencies
+        id: cache-apt
+        uses: actions/cache@v3
+        with:
+          path: |
+            /var/cache/apt/archives/*.deb
+            /var/lib/apt/lists/*
+          key: ${{ runner.os }}-apt-${{ hashFiles('**/package.json', '**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-apt-
+
+      - name: Add Ubuntu Jammy repo for WebKitGTK 4.0
+        run: |
+          echo "deb http://archive.ubuntu.com/ubuntu jammy main universe" | sudo tee -a /etc/apt/sources.list
+          sudo apt update
+
+      - name: Install Linux Dependencies
+        run: |
+          sudo rm -rf /var/cache/apt/archives/lock
+          sudo rm -rf /var/cache/apt/archives/partial
+          sudo rm -rf /var/lib/apt/lists/lock
+          sudo rm -rf /var/lib/apt/lists/partial
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            build-essential \
+            pkg-config \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            libglib2.0-dev \
+            libjavascriptcoregtk-4.0-dev \
+            libsoup-3.0-dev \
+            libwebkit2gtk-4.1-dev
+
+      - name: Remove Jammy repo
+        run: |
+          sudo sed -i '/jammy main universe/d' /etc/apt/sources.list
+          sudo apt update
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: cargo
+          target: x86_64-unknown-linux-gnu
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+          shared-key: "build"
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build Frontend
+        run: npm run build
+
+      - name: Cargo Check
+        run: cargo check --manifest-path src-tauri/Cargo.toml
+
+  build-windows:
+    name: Build Windows Portable Executable
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "lts/*"
+          cache: "npm"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+          shared-key: "windows"
+
+      # Maps rustc diagnostics onto check annotations so compile
+      # errors are readable from the API without job-log access
+      - name: Register rustc problem matcher
+        run: echo "::add-matcher::.github/rust.json"
+
+      - name: Install WebView2
+        run: |
+          $WebView2InstallPath = "$env:TEMP\MicrosoftEdgeWebview2Setup.exe"
+          Invoke-WebRequest "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile $WebView2InstallPath
+          Start-Process -FilePath $WebView2InstallPath -Args "/silent /install" -Wait
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Build Windows Portable Executable
+        env:
+          CARGO_TERM_COLOR: never
+        run: |
+          echo "Building portable Windows executable (bare exe, no installers)..."
+          npm run tauri build -- --no-bundle 2>&1 | Tee-Object -FilePath build-output.log
+          exit $LASTEXITCODE
+
+      - name: Surface build errors as annotations
+        if: failure()
+        shell: pwsh
+        run: |
+          $lines = Get-Content -Path build-output.log -ErrorAction SilentlyContinue
+          $clean = $lines | ForEach-Object { $_ -replace '\x1b\[[0-9;]*m', '' }
+          $hits = $clean |
+            Where-Object { $_ -match '(?i)(^error|error\[E\d+\]|panicked|failed to|cannot find|unresolved|not found|expected)' } |
+            Select-Object -First 10
+          foreach ($h in $hits) {
+            Write-Output ("::error::" + $h.Substring(0, [Math]::Min(350, $h.Length)))
+          }
+          if (-not $hits) {
+            $clean | Select-Object -Last 5 | ForEach-Object {
+              Write-Output ("::error::" + $_.Substring(0, [Math]::Min(350, $_.Length)))
+            }
+          }
+
+      - name: Upload Windows Portable Executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeoHtop-windows-x64-portable
+          path: src-tauri/target/release/NeoHtop.exe
+          if-no-files-found: error

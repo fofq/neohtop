@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import { sveltekit } from "@sveltejs/kit/vite";
 
+// @ts-expect-error - Node's `process` is not typed here (no @types/node dependency)
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vitejs.dev/config/
