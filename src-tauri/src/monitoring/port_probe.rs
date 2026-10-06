@@ -101,14 +101,28 @@ pub struct HttpProbe {
 
 /// Probes one listener and returns the mechanical findings. `host` must
 /// be a plain IP literal (the frontend resolves wildcard binds to
-/// 127.0.0.1 before calling). The probes fan out to short-lived threads:
-/// each owns its connection, and the battery's wall clock stays near one
-/// round trip instead of the sum of nine.
-pub fn identify_port(host: &str, port: u16) -> Result<PortProbe, String> {
+/// 127.0.0.1 before calling). `protocol` selects the battery: UDP
+/// listeners only ever get the DNS-over-UDP probe (every other probe in
+/// the battery speaks TCP), TCP listeners get the full fan-out. The TCP
+/// probes run on short-lived threads — each owns its connection, and the
+/// battery's wall clock stays near one round trip instead of the sum of
+/// nine.
+pub fn identify_port(
+    host: &str,
+    port: u16,
+    protocol: Option<&str>,
+) -> Result<PortProbe, String> {
     let ip: IpAddr = host
         .parse()
         .map_err(|_| format!("invalid probe address: {}", host))?;
     let addr = SocketAddr::new(ip, port);
+    if protocol.map(|p| p.eq_ignore_ascii_case("UDP")).unwrap_or(false) {
+        let dns = probe_dns_udp(addr, port);
+        return Ok(PortProbe {
+            dns,
+            ..PortProbe::default()
+        });
+    }
     let probe = std::thread::scope(|s| {
         let tls = s.spawn(|| probe_tls(addr));
         let socks5 = s.spawn(|| probe_socks5(addr));
@@ -295,6 +309,48 @@ fn probe_dns(addr: SocketAddr) -> bool {
     exchange(addr, DNS_QUERY)
         .map(|reply| reply.len() >= 4 && reply[2] == 0x4e && reply[3] == 0x48)
         .unwrap_or(false)
+}
+
+/// mDNS service-enumeration query (PTR _services._dns-sd._udp.local) —
+/// a plain A query would be ignored on 5353, and every mDNS responder
+/// answers this one
+const MDNS_QUERY: &[u8] = &[
+    0x4e, 0x48, // transaction id
+    0x00, 0x00, // standard query
+    0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // one question
+    0x09, b'_', b's', b'e', b'r', b'v', b'i', b'c', b'e', b's',
+    0x07, b'_', b'd', b'n', b's', b'-', b's', b'd',
+    0x04, b'_', b'u', b'd', b'p',
+    0x05, b'l', b'o', b'c', b'a', b'l',
+    0x00, // root label
+    0x00, 0x0c, // type PTR
+    0x00, 0x01, // class IN
+];
+
+/// DNS-over-UDP probe. The echo of our transaction id with the QR bit
+/// set proves a DNS responder lives on this bind. Port 5353 speaks mDNS
+/// and ignores A queries, so it gets the service-enumeration PTR query.
+fn probe_dns_udp(addr: SocketAddr, port: u16) -> bool {
+    // The DoT payload minus its two-byte TCP length prefix is exactly the
+    // datagram a UDP DNS listener expects
+    let query: &[u8] = if port == 5353 {
+        MDNS_QUERY
+    } else {
+        &DNS_QUERY[2..]
+    };
+    let socket = std::net::UdpSocket::bind(if addr.is_ipv4() {
+        "0.0.0.0:0"
+    } else {
+        "[::]:0"
+    })
+    .ok()?;
+    socket.connect(addr).ok()?;
+    socket.set_read_timeout(Some(READ_TIMEOUT)).ok()?;
+    socket.send(query).ok()?;
+    let mut reply = [0u8; 512];
+    let n = socket.recv(&mut reply).ok()?;
+    // QR (response) flag high, our transaction id echoed back
+    n >= 4 && reply[2] & 0x80 != 0 && reply[0] == query[0] && reply[1] == query[1]
 }
 
 /// Server-speaks-first banner read: one connection that only listens.

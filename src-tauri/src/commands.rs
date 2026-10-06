@@ -266,12 +266,18 @@ pub async fn get_listening_ports() -> Result<Vec<u16>, String> {
 /// blocking task failed; silent listeners are reported as all-false
 /// findings, not errors.
 #[tauri::command]
-pub async fn identify_port(host: String, port: u16) -> Result<PortProbe, String> {
+pub async fn identify_port(
+    host: String,
+    port: u16,
+    protocol: Option<String>,
+) -> Result<PortProbe, String> {
     // Module path required: the command's own name shadows the re-exported
     // function inside this body (same collision process_control has)
-    tauri::async_runtime::spawn_blocking(move || port_probe::identify_port(&host, port))
-        .await
-        .map_err(|e| format!("Failed to probe port: {}", e))?
+    tauri::async_runtime::spawn_blocking(move || {
+        port_probe::identify_port(&host, port, protocol.as_deref())
+    })
+    .await
+    .map_err(|e| format!("Failed to probe port: {}", e))?
 }
 
 /// Suspends all threads of the process with the specified PID

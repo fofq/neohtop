@@ -440,6 +440,7 @@
       const probe: PortProbe = await invoke("identify_port", {
         host: probeTargetOf(connection),
         port: connection.local_port,
+        protocol: connection.protocol,
       });
       roleCache.set(key, probe);
     } catch {
@@ -454,15 +455,17 @@
    * open-in-browser verdict, using the owning process as context: a
    * version-JSON endpoint on a proxy core is a controller, on anything
    * else it is just a web endpoint. Server-speaks-first banners rank
-   * first — no other protocol claims them. */
+   * first — no other protocol claims them. RDP outranks TLS because an
+   * RDP listener with its TLS security layer answers a bare ClientHello
+   * too, and the X.224 confirm is the more specific verdict. */
   function derivePortRole(probe: PortProbe, pid: number): PortRoleVerdict {
     if (probe.greeting) return { tag: probe.greeting, open: null };
+    if (probe.rdp) return { tag: "rdp", open: null };
     if (probe.tls) return { tag: "tls", open: "https" };
     if (probe.dns) return { tag: "dns", open: null };
     if (probe.redis) return { tag: "redis", open: null };
     if (probe.postgres) return { tag: "postgres", open: null };
     if (probe.mongodb) return { tag: "mongodb", open: null };
-    if (probe.rdp) return { tag: "rdp", open: null };
     const isProxyProcess = processCategoryOf(pid) === "proxy";
     if (probe.socks5 && probe.http) return { tag: "mixed", open: null };
     if (probe.socks5) return { tag: "socks", open: null };
@@ -1216,10 +1219,14 @@
   let portActionNoticeTimer: ReturnType<typeof setTimeout> | null = null;
 
   /** Only listening TCP ports map to a browsable URL. */
+  /** A row the role probe may interrogate: any TCP listener, plus every
+   * UDP row (UDP has no connection states — each row is a bind, and the
+   * DNS-over-UDP probe is the one battery that can speak to it). */
   function isListenablePort(connection: PortConnection): boolean {
     return (
-      connection.protocol.toUpperCase() === "TCP" &&
-      stateBucketOf(connection.state) === "listen"
+      connection.protocol.toUpperCase() === "UDP" ||
+      (connection.protocol.toUpperCase() === "TCP" &&
+        stateBucketOf(connection.state) === "listen")
     );
   }
 
