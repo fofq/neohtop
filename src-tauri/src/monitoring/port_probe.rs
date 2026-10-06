@@ -2,11 +2,16 @@
 //!
 //! Answers "what does this listener actually speak" with a battery of
 //! tiny protocol pings: a TLS ClientHello, a SOCKS5 method greeting, an
-//! ordinary HTTP `HEAD /`, a clash-style `GET /version` and a DNS query
-//! framed for DNS-over-TCP. Every probe opens its own short-lived
-//! connection with sub-second timeouts, and the battery only ever runs
-//! for one listener at a time when the user asks — never as a background
-//! scan — so services see nothing beyond the equivalent of `curl -I`.
+//! ordinary HTTP `HEAD /` (plus `GET /version` for clash-style
+//! controllers and `GET /_ping` for Docker), a DNS query framed for
+//! DNS-over-TCP, a server-speaks-first banner read (SSH/FTP/SMTP/VNC/
+//! MySQL/telnet), a RESP `PING`, a PostgreSQL SSLRequest, a MongoDB
+//! legacy `isMaster` OP_QUERY and an X.224 connection request for RDP.
+//! Every probe opens its own short-lived connection on its own thread,
+//! so the battery's wall clock stays near one round trip; it only ever
+//! runs for one listener at a time when the user asks — never as a
+//! background scan — so services see nothing beyond the equivalent of
+//! `curl -I`.
 //!
 //! The findings here are mechanical facts (did it answer X); deciding
 //! which human-readable role they imply happens in the frontend, where
@@ -18,10 +23,12 @@ use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::time::Duration;
 
 /// How long to wait for the TCP connection itself
-const CONNECT_TIMEOUT: Duration = Duration::from_millis(700);
+const CONNECT_TIMEOUT: Duration = Duration::from_millis(500);
 
-/// How long to wait for each probe's reply before declaring it silent
-const READ_TIMEOUT: Duration = Duration::from_millis(450);
+/// How long to wait for each probe's reply before declaring it silent.
+/// Probes only ever target the machine's own listeners, so latency is
+/// negligible and this stays snappy.
+const READ_TIMEOUT: Duration = Duration::from_millis(300);
 
 /// Cap on bytes read from a reply so a chatty service cannot stall us
 const MAX_REPLY: usize = 2048;
@@ -39,6 +46,36 @@ pub struct PortProbe {
     pub http: Option<HttpProbe>,
     /// Answered a DNS-over-TCP query
     pub dns: bool,
+    /// Sent a server-speaks-first banner identifying its protocol
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub greeting: Option<GreetingKind>,
+    /// Answered a RESP PING with a +PONG or a -error line
+    pub redis: bool,
+    /// Answered the PostgreSQL SSLRequest with a single S/N byte
+    pub postgres: bool,
+    /// Answered a legacy `isMaster` OP_QUERY with an OP_REPLY
+    pub mongodb: bool,
+    /// Answered an X.224 connection request with a TPKT confirm
+    pub rdp: bool,
+}
+
+/// Protocols whose server greets the client before any input, read off
+/// the first bytes of one unsolicited banner
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum GreetingKind {
+    /// "SSH-2.0-..." banner
+    Ssh,
+    /// "220 " greeting answered 250 to EHLO
+    Smtp,
+    /// "220 " greeting that rejected EHLO
+    Ftp,
+    /// "RFB 00x.00y" banner
+    Vnc,
+    /// Length-prefixed handshake with protocol version 10
+    Mysql,
+    /// First byte is an IAC escape (0xFF)
+    Telnet,
 }
 
 /// What an HTTP-speaking listener revealed about itself
@@ -58,22 +95,43 @@ pub struct HttpProbe {
     /// unauthenticated probe, and the 401 body carries no version field —
     /// this is the controller signature an open probe can still see
     pub version_auth: bool,
+    /// `GET /_ping` answered 200 with an OK body (the Docker Engine API)
+    pub ping_ok: bool,
 }
 
 /// Probes one listener and returns the mechanical findings. `host` must
 /// be a plain IP literal (the frontend resolves wildcard binds to
-/// 127.0.0.1 before calling).
+/// 127.0.0.1 before calling). The probes fan out to short-lived threads:
+/// each owns its connection, and the battery's wall clock stays near one
+/// round trip instead of the sum of nine.
 pub fn identify_port(host: &str, port: u16) -> Result<PortProbe, String> {
     let ip: IpAddr = host
         .parse()
         .map_err(|_| format!("invalid probe address: {}", host))?;
     let addr = SocketAddr::new(ip, port);
-    Ok(PortProbe {
-        tls: probe_tls(addr),
-        socks5: probe_socks5(addr),
-        http: probe_http(addr),
-        dns: probe_dns(addr),
-    })
+    let probe = std::thread::scope(|s| {
+        let tls = s.spawn(|| probe_tls(addr));
+        let socks5 = s.spawn(|| probe_socks5(addr));
+        let http = s.spawn(|| probe_http(addr));
+        let dns = s.spawn(|| probe_dns(addr));
+        let greeting = s.spawn(|| probe_greeting(addr));
+        let redis = s.spawn(|| probe_redis(addr));
+        let postgres = s.spawn(|| probe_postgres(addr));
+        let mongodb = s.spawn(|| probe_mongodb(addr));
+        let rdp = s.spawn(|| probe_rdp(addr));
+        PortProbe {
+            tls: tls.join().unwrap_or(false),
+            socks5: socks5.join().unwrap_or(false),
+            http: http.join().unwrap_or_default(),
+            dns: dns.join().unwrap_or(false),
+            greeting: greeting.join().unwrap_or_default(),
+            redis: redis.join().unwrap_or(false),
+            postgres: postgres.join().unwrap_or(false),
+            mongodb: mongodb.join().unwrap_or(false),
+            rdp: rdp.join().unwrap_or(false),
+        }
+    });
+    Ok(probe)
 }
 
 /// Opens one connection, sends `request` and collects the reply until the
@@ -158,13 +216,26 @@ fn probe_http(addr: SocketAddr) -> Option<HttpProbe> {
         .and_then(|text| parse_status(text))
         .map(|code| code == 401)
         .unwrap_or(false);
+    let ping_reply = http_request(addr, "GET /_ping")
+        .map(|ping_reply| String::from_utf8_lossy(&ping_reply).into_owned());
+    let ping_ok = ping_reply
+        .as_deref()
+        .and_then(|text| parse_status(text))
+        .map(|code| code == 200 && text_body(text).contains("OK"))
+        .unwrap_or(false);
     Some(HttpProbe {
         status,
         server,
         www_authenticate,
         version_json,
         version_auth,
+        ping_ok,
     })
+}
+
+/// Body of an HTTP response head+text reply (after the blank line)
+fn text_body(text: &str) -> &str {
+    text.split("\r\n\r\n").nth(1).unwrap_or("")
 }
 
 /// Sends one HTTP request line + headers to the listener
@@ -221,5 +292,125 @@ const DNS_QUERY: &[u8] = &[
 fn probe_dns(addr: SocketAddr) -> bool {
     exchange(addr, DNS_QUERY)
         .map(|reply| reply.len() >= 4 && reply[2] == 0x4e && reply[3] == 0x48)
+        .unwrap_or(false)
+}
+
+/// Server-speaks-first banner read: one connection that only listens.
+/// Protocols that wait for the client (HTTP, SOCKS, Redis, PostgreSQL,
+/// MongoDB, RDP) stay silent here and fall through to their own probes.
+fn probe_greeting(addr: SocketAddr) -> Option<GreetingKind> {
+    let mut stream = TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT).ok()?;
+    stream.set_read_timeout(Some(READ_TIMEOUT)).ok()?;
+    let mut chunk = [0u8; 512];
+    let n = stream.read(&mut chunk).ok()?;
+    if n == 0 {
+        return None;
+    }
+    let banner = &chunk[..n];
+    if banner.starts_with(b"SSH-") {
+        return Some(GreetingKind::Ssh);
+    }
+    if banner.starts_with(b"RFB ") {
+        return Some(GreetingKind::Vnc);
+    }
+    // MySQL handshake: 3-byte payload length + sequence 0x00 + protocol
+    // version 10
+    if banner.len() >= 5 && banner[3] == 0x00 && banner[4] == 0x0a {
+        return Some(GreetingKind::Mysql);
+    }
+    if banner[0] == 0xff {
+        return Some(GreetingKind::Telnet);
+    }
+    if banner.starts_with(b"220") {
+        // "220 " opens both FTP and ESMTP; EHLO splits them — SMTP
+        // answers 250, FTP rejects the unknown verb with 5xx
+        stream.write_all(b"EHLO neohtop\r\n").ok()?;
+        let mut buf = [0u8; 256];
+        let follow = stream.read(&mut buf).unwrap_or(0);
+        if follow > 0 && buf.starts_with(b"250") {
+            return Some(GreetingKind::Smtp);
+        }
+        return Some(GreetingKind::Ftp);
+    }
+    None
+}
+
+/// RESP PING: Redis answers +PONG when open, and a -NOAUTH/-ERR/-DENIED
+/// line when guarded — any of them is unmistakably RESP
+fn probe_redis(addr: SocketAddr) -> bool {
+    exchange(addr, b"PING\r\n")
+        .map(|reply| {
+            reply.starts_with(b"+PONG")
+                || reply.starts_with(b"-NOAUTH")
+                || reply.starts_with(b"-ERR")
+                || reply.starts_with(b"-WRONGPASS")
+                || reply.starts_with(b"-DENIED")
+        })
+        .unwrap_or(false)
+}
+
+/// PostgreSQL StartupMessage needs a length-prefixed payload; the 8-byte
+/// SSLRequest is the cheapest well-formed one, and the server answers
+/// exactly one byte: 'S' (SSL ok) or 'N' (plain)
+const PG_SSL_REQUEST: &[u8] = &[
+    0x00, 0x00, 0x00, 0x08, // length 8
+    0x04, 0xd2, 0x16, 0x2f, // magic 80877103
+];
+
+fn probe_postgres(addr: SocketAddr) -> bool {
+    exchange(addr, PG_SSL_REQUEST)
+        .map(|reply| reply.len() == 1 && (reply[0] == b'S' || reply[0] == b'N'))
+        .unwrap_or(false)
+}
+
+/// Legacy OP_QUERY {isMaster: 1} on admin.$cmd — the one message every
+/// MongoDB generation still answers with an OP_REPLY. 58 bytes total:
+/// 16 header (len 58, reqId 1, respTo 0, opCode 2004) + 4 flags +
+/// "admin.$cmd\0" + skip 0 + return -1 + the 19-byte document.
+const MONGO_ISMASTER: &[u8] = &[
+    0x3a, 0x00, 0x00, 0x00, // message length 58
+    0x01, 0x00, 0x00, 0x00, // request id 1
+    0x00, 0x00, 0x00, 0x00, // response to 0
+    0xd4, 0x07, 0x00, 0x00, // opCode 2004 (OP_QUERY)
+    0x00, 0x00, 0x00, 0x00, // flags
+    b'a', b'd', b'm', b'i', b'n', b'.', b'$', b'c', b'm', b'd', 0x00,
+    0x00, 0x00, 0x00, 0x00, // number to skip
+    0xff, 0xff, 0xff, 0xff, // number to return -1
+    0x13, 0x00, 0x00, 0x00, // document length 19
+    0x10, // element type int32
+    b'i', b's', b'M', b'a', b's', b't', b'e', b'r', 0x00,
+    0x01, 0x00, 0x00, 0x00, // value 1
+    0x00, // document terminator
+];
+
+fn probe_mongodb(addr: SocketAddr) -> bool {
+    exchange(addr, MONGO_ISMASTER)
+        .map(|reply| {
+            reply.len() >= 16
+                && reply[8..12] == [0x01, 0x00, 0x00, 0x00]
+                && reply[12..16] == [0x01, 0x00, 0x00, 0x00]
+        })
+        .unwrap_or(false)
+}
+
+/// X.224 connection request with a routing cookie and RDP negotiation
+/// request — Windows RDP ignores shorter forms and only confirms this
+/// one; the confirm arrives in the same 03 00 TPKT framing (verified
+/// against a live listener). 42 bytes total.
+const RDP_CONN_REQUEST: &[u8] = &[
+    0x03, 0x00, 0x00, 0x2a, // TPKT: version 3, length 42
+    0x25, 0xe0, // X.224 LI 37, CR code
+    0x00, 0x00, 0x00, 0x00, 0x00, // dst/src refs, class 0
+    b'C', b'o', b'o', b'k', b'i', b'e', b':', b' ', b'm', b's', b't', b's',
+    b'h', b'a', b's', b'h', b'=', b'n', b'm', b'a', b'p', 0x0d, 0x0a,
+    0x01, 0x00, 0x08, 0x00, // RDP_NEG_REQ: type, flags, length 8
+    0x00, 0x00, 0x00, 0x00, // requestedProtocols: classic security
+];
+
+fn probe_rdp(addr: SocketAddr) -> bool {
+    exchange(addr, RDP_CONN_REQUEST)
+        .map(|reply| {
+            reply.len() >= 4 && reply[0] == 0x03 && reply[1] == 0x00 && reply[2] == 0x00
+        })
         .unwrap_or(false)
 }

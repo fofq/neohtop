@@ -180,7 +180,12 @@ export interface HttpProbe {
   version_json: boolean;
   /** `GET /version` answered 401 (secret-guarded controller API). */
   version_auth: boolean;
+  /** `GET /_ping` answered 200 with an OK body (Docker Engine API). */
+  ping_ok: boolean;
 }
+
+/** Server-speaks-first banner kinds (port_probe.rs GreetingKind). */
+export type PortGreeting = "ssh" | "ftp" | "smtp" | "vnc" | "mysql" | "telnet";
 
 /** Mechanical probe findings for one TCP listener (port_probe.rs). */
 export interface PortProbe {
@@ -192,6 +197,16 @@ export interface PortProbe {
   http?: HttpProbe | null;
   /** Answered a DNS-over-TCP query. */
   dns: boolean;
+  /** Sent a protocol banner before any input (SSH/FTP/SMTP/VNC/MySQL/telnet). */
+  greeting?: PortGreeting | null;
+  /** Answered a RESP PING (+PONG or a -error line). */
+  redis: boolean;
+  /** Answered the PostgreSQL SSLRequest with a single S/N byte. */
+  postgres: boolean;
+  /** Answered a legacy isMaster OP_QUERY with an OP_REPLY. */
+  mongodb: boolean;
+  /** Answered an X.224 connection request with a TPKT confirm. */
+  rdp: boolean;
 }
 
 /** One autostart entry of the startup-items panel (registry Run key,

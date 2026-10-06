@@ -319,17 +319,51 @@
     return null;
   }
 
+  /** Category a probed role feeds back into the filter chips: a listener
+   * the port table and the process name cannot place still lands under
+   * its protocol's chip once the probe has spoken. High-confidence
+   * mappings only — tls stays unmapped (any service can speak TLS). */
+  const ROLE_CATEGORIES: Partial<Record<PortRole, PortCategoryKey>> = {
+    web: "web",
+    mysql: "database",
+    postgres: "database",
+    redis: "database",
+    mongodb: "database",
+    docker: "dev",
+    ssh: "system",
+    ftp: "system",
+    rdp: "system",
+    vnc: "system",
+    telnet: "system",
+    smtp: "mail",
+  };
+
   /** First matching category for a connection: the owning process's name
    * wins (exact-or-prefix hit on a distinctive pattern), then the
-   * well-known local-port table. Null for ordinary ports. */
+   * well-known local-port table, then the probed protocol role. Null for
+   * ordinary ports. */
   function categoryOf(connection: PortConnection): PortCategoryKey | null {
+    const role = portRoleOf(connection)?.tag;
     return (
       processCategoryOf(connection.pid) ??
       PORT_CATEGORIES.find((category) =>
         category.ports.includes(connection.local_port),
       )?.key ??
+      (role ? ROLE_CATEGORIES[role] : undefined) ??
       null
     );
+  }
+
+  /** Category-chip filter. roleCacheVersion rides along as a dependency
+   * so late probe results re-run the filter: a row the port table cannot
+   * place joins its protocol chip when its probe lands. */
+  function filterByCategory(
+    list: PortConnection[],
+    filter: "all" | PortCategoryKey,
+    _roleCacheVersion: number,
+  ): PortConnection[] {
+    if (filter === "all") return list;
+    return list.filter((connection) => categoryOf(connection) === filter);
   }
   let categoryFilter: "all" | PortCategoryKey = "all";
 
@@ -346,7 +380,18 @@
     | "controller"
     | "web"
     | "tls"
-    | "dns";
+    | "dns"
+    | "ssh"
+    | "ftp"
+    | "smtp"
+    | "vnc"
+    | "mysql"
+    | "telnet"
+    | "redis"
+    | "postgres"
+    | "mongodb"
+    | "rdp"
+    | "docker";
   type PortRoleVerdict = {
     tag: PortRole | null;
     /** What the open-in-browser button may do: https for TLS listeners,
@@ -371,6 +416,21 @@
     return addr;
   }
 
+  /** Findings for a listener the battery could not reach at all: the
+   * probe ran and heard silence, so it must be cached like any other
+   * result or the auto-probe pass would hammer the port forever. */
+  const SILENT_PROBE: PortProbe = {
+    tls: false,
+    socks5: false,
+    http: null,
+    dns: false,
+    greeting: null,
+    redis: false,
+    postgres: false,
+    mongodb: false,
+    rdp: false,
+  };
+
   async function identifyPortRole(connection: PortConnection) {
     const key = roleKeyOf(connection);
     if (roleCache.has(key) || roleLoading.has(key)) return;
@@ -383,7 +443,7 @@
       });
       roleCache.set(key, probe);
     } catch {
-      // Identification is best effort; silence keeps rows untagged
+      roleCache.set(key, SILENT_PROBE);
     } finally {
       roleLoading.delete(key);
       roleCacheVersion++;
@@ -393,10 +453,16 @@
   /** Interprets the mechanical probe findings into a role tag and an
    * open-in-browser verdict, using the owning process as context: a
    * version-JSON endpoint on a proxy core is a controller, on anything
-   * else it is just a web endpoint. */
+   * else it is just a web endpoint. Server-speaks-first banners rank
+   * first — no other protocol claims them. */
   function derivePortRole(probe: PortProbe, pid: number): PortRoleVerdict {
+    if (probe.greeting) return { tag: probe.greeting, open: null };
     if (probe.tls) return { tag: "tls", open: "https" };
     if (probe.dns) return { tag: "dns", open: null };
+    if (probe.redis) return { tag: "redis", open: null };
+    if (probe.postgres) return { tag: "postgres", open: null };
+    if (probe.mongodb) return { tag: "mongodb", open: null };
+    if (probe.rdp) return { tag: "rdp", open: null };
     const isProxyProcess = processCategoryOf(pid) === "proxy";
     if (probe.socks5 && probe.http) return { tag: "mixed", open: null };
     if (probe.socks5) return { tag: "socks", open: null };
@@ -412,6 +478,7 @@
       if (controllerish && isProxyProcess) {
         return { tag: "controller", open: "panel" };
       }
+      if (probe.http.ping_ok) return { tag: "docker", open: "http" };
       if (isProxyProcess) return { tag: "http_proxy", open: null };
       return { tag: "web", open: "http" };
     }
@@ -1299,13 +1366,11 @@
       stateFilter === "all" || stateBucketOf(connection.state) === stateFilter,
   );
 
-  // "With traffic only": drops idle connections (listeners, stagnant TCP)
-  $: categoryFilteredConnections =
-    categoryFilter === "all"
-      ? stateFilteredConnections
-      : stateFilteredConnections.filter(
-          (connection) => categoryOf(connection) === categoryFilter,
-        );
+  $: categoryFilteredConnections = filterByCategory(
+    stateFilteredConnections,
+    categoryFilter,
+    roleCacheVersion,
+  );
 
   $: trafficFilteredConnections = hideIdle
     ? categoryFilteredConnections.filter(
