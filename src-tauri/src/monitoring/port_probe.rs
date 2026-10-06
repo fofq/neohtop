@@ -331,6 +331,10 @@ const MDNS_QUERY: &[u8] = &[
 /// set proves a DNS responder lives on this bind. Port 5353 speaks mDNS
 /// and ignores A queries, so it gets the service-enumeration PTR query.
 fn probe_dns_udp(addr: SocketAddr, port: u16) -> bool {
+    probe_dns_udp_inner(addr, port).unwrap_or(false)
+}
+
+fn probe_dns_udp_inner(addr: SocketAddr, port: u16) -> Option<bool> {
     // The DoT payload minus its two-byte TCP length prefix is exactly the
     // datagram a UDP DNS listener expects
     let query: &[u8] = if port == 5353 {
@@ -350,7 +354,9 @@ fn probe_dns_udp(addr: SocketAddr, port: u16) -> bool {
     let mut reply = [0u8; 512];
     let n = socket.recv(&mut reply).ok()?;
     // QR (response) flag high, our transaction id echoed back
-    n >= 4 && reply[2] & 0x80 != 0 && reply[0] == query[0] && reply[1] == query[1]
+    Some(
+        n >= 4 && reply[2] & 0x80 != 0 && reply[0] == query[0] && reply[1] == query[1],
+    )
 }
 
 /// Server-speaks-first banner read: one connection that only listens.
