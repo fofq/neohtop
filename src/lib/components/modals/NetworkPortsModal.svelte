@@ -22,6 +22,8 @@
     faPlay,
     faRefresh,
     faSitemap,
+    faSpinner,
+    faStethoscope,
     faStar,
     faTriangleExclamation,
     faUpRightFromSquare,
@@ -44,6 +46,7 @@
   } from "$lib/utils";
   import type {
     PortConnection,
+    PortProbe,
     PortsViewMode,
     Process,
     ProcessMetadata,
@@ -298,26 +301,154 @@
     return raw.toLowerCase().replace(/\.(exe|com|bat|cmd)$/, "");
   }
 
+  /** Category implied by the owning process's name alone (the port table
+   * is NOT consulted) — also drives the probe-role interpretation. */
+  function processCategoryOf(pid: number): PortCategoryKey | null {
+    const name = normalizedProcessName(pid);
+    if (!name) return null;
+    for (const category of PROCESS_CATEGORIES) {
+      for (const pattern of category.patterns) {
+        if (name === pattern || name.startsWith(pattern)) {
+          return category.key;
+        }
+      }
+    }
+    return null;
+  }
+
   /** First matching category for a connection: the owning process's name
    * wins (exact-or-prefix hit on a distinctive pattern), then the
    * well-known local-port table. Null for ordinary ports. */
   function categoryOf(connection: PortConnection): PortCategoryKey | null {
-    const name = normalizedProcessName(connection.pid);
-    if (name) {
-      for (const category of PROCESS_CATEGORIES) {
-        for (const pattern of category.patterns) {
-          if (name === pattern || name.startsWith(pattern)) {
-            return category.key;
-          }
-        }
-      }
-    }
-    for (const category of PORT_CATEGORIES) {
-      if (category.ports.includes(connection.local_port)) return category.key;
-    }
-    return null;
+    return (
+      processCategoryOf(connection.pid) ??
+      PORT_CATEGORIES.find((category) =>
+        category.ports.includes(connection.local_port),
+      )?.key ??
+      null
+    );
   }
   let categoryFilter: "all" | PortCategoryKey = "all";
+
+  // --- Listening-port role probing ----------------------------------------
+  // One on-demand probe battery per listener ("what does this port
+  // actually speak?"), cached for the modal session keyed by pid:port so
+  // the IPv4/IPv6 wildcard pair shares one result. Results are never
+  // probed automatically for the whole table — only when the user clicks
+  // a row's identify button or expands the detail panel.
+  type PortRole =
+    | "socks"
+    | "http_proxy"
+    | "mixed"
+    | "controller"
+    | "web"
+    | "tls"
+    | "dns";
+  type PortRoleVerdict = {
+    tag: PortRole | null;
+    /** What the open-in-browser button may do: https for TLS listeners,
+     * panel for clash-style controllers (opens /ui), http for web. */
+    open: "http" | "https" | "panel" | null;
+  };
+  let roleCache = new Map<string, PortProbe>();
+  let roleLoading = new Set<string>();
+  /** Bumped whenever the cache or loading set changes; referenced by the
+   * derived role map so Svelte re-renders the tags/buttons. */
+  let roleCacheVersion = 0;
+
+  function roleKeyOf(connection: PortConnection): string {
+    return `${connection.pid}:${connection.local_port}`;
+  }
+
+  /** Probe target for a listener: wildcard binds are reachable on the
+   * loopback, specific addresses are probed as shown. */
+  function probeTargetOf(connection: PortConnection): string {
+    const addr = connection.local_addr;
+    if (addr === "0.0.0.0" || addr === "::" || addr === "") return "127.0.0.1";
+    return addr;
+  }
+
+  async function identifyPortRole(connection: PortConnection) {
+    const key = roleKeyOf(connection);
+    if (roleCache.has(key) || roleLoading.has(key)) return;
+    roleLoading.add(key);
+    roleCacheVersion++;
+    try {
+      const probe: PortProbe = await invoke("identify_port", {
+        host: probeTargetOf(connection),
+        port: connection.local_port,
+      });
+      roleCache.set(key, probe);
+    } catch {
+      // Identification is best effort; silence keeps rows untagged
+    } finally {
+      roleLoading.delete(key);
+      roleCacheVersion++;
+    }
+  }
+
+  /** Interprets the mechanical probe findings into a role tag and an
+   * open-in-browser verdict, using the owning process as context: a
+   * version-JSON endpoint on a proxy core is a controller, on anything
+   * else it is just a web endpoint. */
+  function derivePortRole(probe: PortProbe, pid: number): PortRoleVerdict {
+    if (probe.tls) return { tag: "tls", open: "https" };
+    if (probe.dns) return { tag: "dns", open: null };
+    const isProxyProcess = processCategoryOf(pid) === "proxy";
+    if (probe.socks5 && probe.http) return { tag: "mixed", open: null };
+    if (probe.socks5) return { tag: "socks", open: null };
+    if (probe.http) {
+      const controllerish =
+        probe.http.version_json ||
+        (probe.http.www_authenticate && probe.http.status === 401);
+      if (controllerish && isProxyProcess) {
+        return { tag: "controller", open: "panel" };
+      }
+      if (isProxyProcess) return { tag: "http_proxy", open: null };
+      return { tag: "web", open: "http" };
+    }
+    return { tag: null, open: null };
+  }
+
+  /** Derived tag/verdict per probed listener; depends on roleCacheVersion
+   * so the template re-renders when async probes land. */
+  $: derivedRoles = (() => {
+    void roleCacheVersion;
+    const out = new Map<string, PortRoleVerdict>();
+    for (const [key, probe] of roleCache) {
+      const pid = Number(key.slice(0, key.indexOf(":")));
+      out.set(key, derivePortRole(probe, pid));
+    }
+    return out;
+  })();
+
+  /** Keys currently being probed (for the spinner state). */
+  $: probingKeys = (() => {
+    void roleCacheVersion;
+    return new Set(roleLoading);
+  })();
+
+  /** Keys with a finished probe (for the identify button's active state). */
+  $: identifiedKeys = (() => {
+    void roleCacheVersion;
+    return new Set(roleCache.keys());
+  })();
+
+  function portRoleOf(connection: PortConnection): PortRoleVerdict | null {
+    return derivedRoles.get(roleKeyOf(connection)) ?? null;
+  }
+
+  /** Security-relevant bind scope straight from the address: wildcard
+   * binds accept connections from any interface (LAN included), loopback
+   * binds are local-only. Specific adapter addresses get no badge. */
+  function bindScopeOf(
+    connection: PortConnection,
+  ): "ports.bindAll" | "ports.bindLocal" | null {
+    const addr = connection.local_addr;
+    if (addr === "0.0.0.0" || addr === "::") return "ports.bindAll";
+    if (addr === "127.0.0.1" || addr === "::1") return "ports.bindLocal";
+    return null;
+  }
 
   // --- Port deep-dive panel ("Why is this running?") ---
   // The panel is keyed by the connection's 6-tuple instead of object
@@ -990,9 +1121,31 @@
     return `http://${addr}:${connection.local_port}`;
   }
 
+  /** URL the browser should open for an identified listener, or null when
+   * the role is not browser-relevant (SOCKS/DNS/unknown). Wildcard binds
+   * open as localhost; TLS listeners open as https; clash-style
+   * controllers jump straight to the /ui panel. */
+  function browserUrlOf(connection: PortConnection): string | null {
+    const role = portRoleOf(connection);
+    if (!role?.open) return null;
+    const addr = connection.local_addr;
+    const scheme = role.open === "https" ? "https" : "http";
+    let base: string;
+    if (addr === "0.0.0.0" || addr === "::" || addr === "") {
+      base = `${scheme}://localhost:${connection.local_port}`;
+    } else if (addr.includes(":")) {
+      base = `${scheme}://[${addr}]:${connection.local_port}`;
+    } else {
+      base = `${scheme}://${addr}:${connection.local_port}`;
+    }
+    return role.open === "panel" ? `${base}/ui` : base;
+  }
+
   async function openPortInBrowser(connection: PortConnection) {
+    const url = browserUrlOf(connection);
+    if (!url) return;
     try {
-      await open(portUrl(connection));
+      await open(url);
     } catch {
       showPortNotice(connectionKey(connection), $t("ports.browserOpenFailed"));
     }
@@ -1221,6 +1374,17 @@
 
   $: detailChain = detailProcess
     ? buildAncestryChain(detailProcess, $processStore.processes)
+    : null;
+
+  // Opening the deep-dive panel is a user action on one listener: run the
+  // role probe for it then (no-op when already probed/cached)
+  $: if (detailConnection) {
+    identifyPortRole(detailConnection);
+  }
+
+  /** Probe findings of the panel's listener, for the Server-header fact. */
+  $: detailProbe = (void roleCacheVersion, detailConnection)
+    ? (roleCache.get(roleKeyOf(detailConnection)) ?? null)
     : null;
 
   // --- Relations (witr-style): children and siblings from the snapshot ---
@@ -1896,14 +2060,17 @@
             <Fa icon={faCircleInfo} />
           </button>
           {#if isListenablePort(connection)}
-            <button
-              class="focus-btn"
-              on:click={() => openPortInBrowser(connection)}
-              title={$t("ports.openInBrowser")}
-              aria-label={$t("ports.openInBrowser")}
-            >
-              <Fa icon={faUpRightFromSquare} />
-            </button>
+            {@const role = portRoleOf(connection)}
+            {#if role?.open}
+              <button
+                class="focus-btn"
+                on:click={() => openPortInBrowser(connection)}
+                title={$t("ports.openInBrowser")}
+                aria-label={$t("ports.openInBrowser")}
+              >
+                <Fa icon={faUpRightFromSquare} />
+              </button>
+            {/if}
             <button
               class="focus-btn"
               class:copied={copiedPortKeys.has(portActionKey)}
@@ -1912,6 +2079,21 @@
               aria-label={$t("ports.copyAddress")}
             >
               <Fa icon={copiedPortKeys.has(portActionKey) ? faCheck : faCopy} />
+            </button>
+            <button
+              class="focus-btn"
+              class:active={identifiedKeys.has(roleKeyOf(connection))}
+              disabled={probingKeys.has(roleKeyOf(connection))}
+              on:click={() => identifyPortRole(connection)}
+              title={$t("ports.identify")}
+              aria-label={$t("ports.identify")}
+            >
+              <Fa
+                icon={probingKeys.has(roleKeyOf(connection))
+                  ? faSpinner
+                  : faStethoscope}
+                spin={probingKeys.has(roleKeyOf(connection))}
+              />
             </button>
           {/if}
           <button
@@ -1963,15 +2145,26 @@
         {/if}
       {/snippet}
 
-      <!-- Local endpoint with a category tag for well-known ports -->
+      <!-- Local endpoint with a category tag for well-known ports, the
+           probed service role and the security-relevant bind scope -->
       {#snippet localPortCell(connection: PortConnection)}
         {@const category = categoryOf(connection)}
+        {@const role = portRoleOf(connection)}
+        {@const bindScope = bindScopeOf(connection)}
         <td class="mono">
           {connection.local_addr}:{connection.local_port}
           {#if category}
             <span class="port-cat cat-{category}"
               >{$t(`ports.cat.${category}`)}</span
             >
+          {/if}
+          {#if role?.tag}
+            <span class="role-tag role-{role.tag}"
+              >{$t(`ports.role.${role.tag}`)}</span
+            >
+          {/if}
+          {#if bindScope}
+            <span class="bind-scope">{$t(bindScope)}</span>
           {/if}
         </td>
       {/snippet}
@@ -2157,6 +2350,14 @@
                           )}
                         </span>
                       </span>
+                    </div>
+                  {/if}
+                  {#if detailProbe?.http?.server}
+                    <div class="fact">
+                      <span class="fact-label">{$t("ports.fServer")}</span>
+                      <span class="fact-value mono"
+                        >{detailProbe.http.server}</span
+                      >
                     </div>
                   {/if}
                   {#if detailMetadata?.company}
@@ -3650,6 +3851,41 @@
   .port-cat.cat-mail {
     color: var(--green);
     background: color-mix(in srgb, var(--green) 14%, transparent);
+  }
+
+  /* Probed service role (SOCKS/mixed/controller/...): neutral chrome, the
+     controller verdict gets the accent since it is the actionable one */
+  .role-tag {
+    margin-left: 6px;
+    padding: 1px 5px;
+    font-family: inherit;
+    font-size: 10px;
+    border-radius: 4px;
+    white-space: nowrap;
+    color: var(--text);
+    background: color-mix(in srgb, var(--overlay0) 22%, transparent);
+  }
+
+  .role-tag.role-controller,
+  .role-tag.role-web {
+    color: var(--blue);
+    background: color-mix(in srgb, var(--blue) 14%, transparent);
+  }
+
+  .role-tag.role-mixed,
+  .role-tag.role-socks,
+  .role-tag.role-http_proxy {
+    color: var(--sapphire);
+    background: color-mix(in srgb, var(--sapphire) 14%, transparent);
+  }
+
+  /* Bind scope hint (all interfaces vs local only) — quieter than tags */
+  .bind-scope {
+    margin-left: 6px;
+    font-family: inherit;
+    font-size: 10px;
+    white-space: nowrap;
+    color: var(--overlay0);
   }
 
   /* Integrity level badge in the detail panel */

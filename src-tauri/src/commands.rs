@@ -5,11 +5,11 @@
 //! the frontend and the system monitoring functionality.
 
 use crate::monitoring::{
-    AppWindow, DriverInfo, FileLocker, KillTreeResult, ModuleInfo, PortConnection, ProcessInfo,
-    ProcessMetadata, ProcessMonitor, ProcessPriorityInfo, ServiceInfo, StartupItem,
-    SystemStats, TrafficCounters, collect_network_ports, file_lockers, listening_ports,
-    network_ports, process_control, process_inspection, services, startup_items, tcp_control,
-    window_list,
+    AppWindow, DriverInfo, FileLocker, KillTreeResult, ModuleInfo, PortConnection, PortProbe,
+    ProcessInfo, ProcessMetadata, ProcessMonitor, ProcessPriorityInfo, ServiceInfo, StartupItem,
+    SystemStats, TrafficCounters, collect_network_ports, file_lockers, identify_port,
+    listening_ports, network_ports, process_control, process_inspection, services, startup_items,
+    tcp_control, window_list,
 };
 use crate::state::AppState;
 use tauri::State;
@@ -252,6 +252,24 @@ pub async fn get_listening_ports() -> Result<Vec<u16>, String> {
     Ok(tauri::async_runtime::spawn_blocking(listening_ports)
         .await
         .map_err(|e| format!("Failed to collect listening ports: {}", e))?)
+}
+
+/// Probes one TCP listener to find out what protocol it speaks
+///
+/// Runs the on-demand probe battery (TLS / SOCKS5 / HTTP / clash-style
+/// version endpoint / DNS) against a single listener on a blocking
+/// thread. The frontend resolves wildcard binds to 127.0.0.1 first.
+///
+/// # Errors
+///
+/// Returns an error string if the host is not an IP literal or the
+/// blocking task failed; silent listeners are reported as all-false
+/// findings, not errors.
+#[tauri::command]
+pub async fn identify_port(host: String, port: u16) -> Result<PortProbe, String> {
+    tauri::async_runtime::spawn_blocking(move || identify_port(&host, port))
+        .await
+        .map_err(|e| format!("Failed to probe port: {}", e))?
 }
 
 /// Suspends all threads of the process with the specified PID

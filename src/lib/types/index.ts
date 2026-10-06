@@ -163,6 +163,30 @@ export interface PortConnection {
   bytes_received: number;
 }
 
+/** What an HTTP-speaking listener revealed about itself (port probe). */
+export interface HttpProbe {
+  /** Status code of the `HEAD /` response. */
+  status: number;
+  /** Server response header, when the listener sends one. */
+  server?: string | null;
+  /** WWW-Authenticate header present (auth-guarded REST API). */
+  www_authenticate: boolean;
+  /** `GET /version` answered with version-shaped JSON (clash/mihomo controller). */
+  version_json: boolean;
+}
+
+/** Mechanical probe findings for one TCP listener (port_probe.rs). */
+export interface PortProbe {
+  /** Answered a TLS ClientHello. */
+  tls: boolean;
+  /** Completed the SOCKS5 method negotiation. */
+  socks5: boolean;
+  /** Answered an ordinary HTTP request (HEAD /). */
+  http?: HttpProbe | null;
+  /** Answered a DNS-over-TCP query. */
+  dns: boolean;
+}
+
 /** One autostart entry of the startup-items panel (registry Run key,
  * Startup folder file or scheduled task). */
 export interface StartupItem {

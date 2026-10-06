@@ -15,6 +15,8 @@ mod winbuf;
 // Exposed as a module path because its function names collide with the
 // Tauri commands in commands.rs (e.g. restart_as_admin)
 pub(crate) mod process_control;
+// On-demand listening-port role probing (SOCKS/HTTP/TLS/DNS pings)
+pub(crate) mod port_probe;
 // These are exposed as module paths (like process_control above) so the
 // Tauri commands in commands.rs call them unambiguously
 pub(crate) mod file_lockers;
@@ -26,6 +28,7 @@ pub(crate) mod tcp_control;
 pub(crate) mod window_list;
 
 pub use file_lockers::FileLocker;
+pub use port_probe::{PortProbe, identify_port};
 pub use process_inspection::{DriverInfo, ModuleInfo, ProcessMetadata};
 pub use services::ServiceInfo;
 pub use window_list::AppWindow;
