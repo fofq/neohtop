@@ -28,6 +28,7 @@
     faTriangleExclamation,
     faUpRightFromSquare,
     faXmark,
+    faPen,
   } from "@fortawesome/free-solid-svg-icons";
   import { Modal } from "$lib/components";
   import { t } from "$lib/i18n";
@@ -50,6 +51,7 @@
     PortsViewMode,
     Process,
     ProcessMetadata,
+    ServiceInfo,
   } from "$lib/types";
 
   export let show = false;
@@ -438,6 +440,35 @@
     return derivedRoles.get(roleKeyOf(connection)) ?? null;
   }
 
+  /** Services hosting a given PID, attributed from one services snapshot. */
+  function servicesOfPid(pid: number): ServiceInfo[] {
+    return servicesByPid.get(pid) ?? [];
+  }
+
+  // --- User port labels (port-killer style) --------------------------------
+  // Free-text names per local port number, persisted in the behavior
+  // config; shown next to the address, on watched chips and in watch
+  // toasts — the fallback for listeners no probe can identify.
+  $: portLabels = $settingsStore.behavior.portLabels ?? {};
+
+  function portLabelOf(port: number): string {
+    return portLabels[String(port)] ?? "";
+  }
+
+  function setPortLabel(port: number, label: string) {
+    const trimmed = label.trim();
+    const next = { ...portLabels };
+    if (trimmed) next[String(port)] = trimmed;
+    else delete next[String(port)];
+    settingsStore.updateConfig({
+      behavior: { ...$settingsStore.behavior, portLabels: next },
+    });
+  }
+
+  /** Inline label editor state for the detail panel. */
+  let editingLabel = false;
+  let labelDraft = "";
+
   /** Security-relevant bind scope straight from the address: wildcard
    * binds accept connections from any interface (LAN included), loopback
    * binds are local-only. Specific adapter addresses get no badge. */
@@ -449,6 +480,35 @@
     if (addr === "127.0.0.1" || addr === "::1") return "ports.bindLocal";
     return null;
   }
+
+  // --- Windows service attribution (witr-style) ----------------------------
+  // One list_services load per modal session, joined by PID: a listener
+  // owned by a service-hosting process (svchost etc.) is attributed to
+  // the concrete running service(s) instead of a bare "svchost.exe".
+  let servicesByPid = new Map<number, ServiceInfo[]>();
+  let servicesLoaded = false;
+  let servicesVersion = 0;
+
+  async function loadServicesForAttribution() {
+    if (servicesLoaded) return;
+    servicesLoaded = true; // one attempt per modal session
+    try {
+      const list: ServiceInfo[] = await invoke("list_services");
+      const map = new Map<number, ServiceInfo[]>();
+      for (const svc of list) {
+        if (!svc.pid) continue;
+        const bucket = map.get(svc.pid);
+        if (bucket) bucket.push(svc);
+        else map.set(svc.pid, [svc]);
+      }
+      servicesByPid = map;
+      servicesVersion++;
+    } catch {
+      // Attribution is best effort (non-admin still lists most services)
+    }
+  }
+
+  $: if (show) loadServicesForAttribution();
 
   // --- Port deep-dive panel ("Why is this running?") ---
   // The panel is keyed by the connection's 6-tuple instead of object
@@ -1387,6 +1447,18 @@
     ? (roleCache.get(roleKeyOf(detailConnection)) ?? null)
     : null;
 
+  /** Windows services hosting the panel's listener (svchost attribution). */
+  $: detailServices = (void servicesVersion, detailConnection)
+    ? servicesOfPid(detailConnection.pid)
+    : [];
+
+  // Close the inline label editor whenever the panel moves to another row
+  let lastDetailKey: string | null = null;
+  $: if (detailKey !== lastDetailKey) {
+    lastDetailKey = detailKey;
+    editingLabel = false;
+  }
+
   // --- Relations (witr-style): children and siblings from the snapshot ---
   $: detailChildren = detailProcess
     ? $processStore.processes.filter(
@@ -2007,10 +2079,13 @@
               class="watch-chip"
               class:live={liveListenPorts.has(port)}
               on:click={() => togglePortWatch(port)}
-              title={$t("ports.watchRemove")}
+              title={portLabelOf(port)
+                ? `${port} · ${portLabelOf(port)}`
+                : $t("ports.watchRemove")}
             >
               <Fa icon={faBell} />
-              {port}
+              {port}{#if portLabelOf(port)}
+                <span class="watch-chip-label">{portLabelOf(port)}</span>{/if}
               <span class="watch-x">×</span>
             </button>
           {/each}
@@ -2151,8 +2226,12 @@
         {@const category = categoryOf(connection)}
         {@const role = portRoleOf(connection)}
         {@const bindScope = bindScopeOf(connection)}
+        {@const label = portLabelOf(connection.local_port)}
         <td class="mono">
           {connection.local_addr}:{connection.local_port}
+          {#if label}
+            <span class="port-label">{label}</span>
+          {/if}
           {#if category}
             <span class="port-cat cat-{category}"
               >{$t(`ports.cat.${category}`)}</span
@@ -2358,6 +2437,69 @@
                       <span class="fact-value mono"
                         >{detailProbe.http.server}</span
                       >
+                    </div>
+                  {/if}
+                  {#if detailServices.length > 0}
+                    <div class="fact">
+                      <span class="fact-label"
+                        >{$t("ports.fWindowsService")}</span
+                      >
+                      <span class="fact-value">
+                        {detailServices
+                          .slice(0, 3)
+                          .map((svc) => svc.display_name || svc.name)
+                          .join("、")}{#if detailServices.length > 3}
+                          +{detailServices.length - 3}{/if}
+                      </span>
+                    </div>
+                  {/if}
+                  {#if detailConnection}
+                    <div class="fact">
+                      <span class="fact-label">{$t("ports.fLabel")}</span>
+                      <span class="fact-value">
+                        {#if editingLabel}
+                          <!-- svelte-ignore a11y_autofocus -->
+                          <input
+                            class="label-input mono"
+                            bind:value={labelDraft}
+                            autofocus
+                            placeholder={$t("ports.labelPlaceholder")}
+                            on:keydown={(event) => {
+                              if (event.key === "Enter") {
+                                setPortLabel(
+                                  detailConnection.local_port,
+                                  labelDraft,
+                                );
+                                editingLabel = false;
+                              } else if (event.key === "Escape") {
+                                editingLabel = false;
+                              }
+                            }}
+                            on:blur={() => {
+                              setPortLabel(
+                                detailConnection.local_port,
+                                labelDraft,
+                              );
+                              editingLabel = false;
+                            }}
+                          />
+                        {:else}
+                          {portLabelOf(detailConnection.local_port) || "-"}
+                          <button
+                            class="focus-btn label-edit"
+                            on:click={() => {
+                              labelDraft = portLabelOf(
+                                detailConnection.local_port,
+                              );
+                              editingLabel = true;
+                            }}
+                            title={$t("ports.editLabel")}
+                            aria-label={$t("ports.editLabel")}
+                          >
+                            <Fa icon={faPen} />
+                          </button>
+                        {/if}
+                      </span>
                     </div>
                   {/if}
                   {#if detailMetadata?.company}
@@ -3886,6 +4028,45 @@
     font-size: 10px;
     white-space: nowrap;
     color: var(--overlay0);
+  }
+
+  /* User-assigned port label: the human name for this listener */
+  .port-label {
+    margin-left: 6px;
+    padding: 1px 6px;
+    font-family: inherit;
+    font-size: 10px;
+    white-space: nowrap;
+    color: var(--mauve);
+    background: color-mix(in srgb, var(--mauve) 14%, transparent);
+    border-radius: 4px;
+  }
+
+  .watch-chip-label {
+    font-size: 10px;
+    opacity: 0.85;
+  }
+
+  /* Inline label editor in the detail panel */
+  .label-input {
+    width: 200px;
+    padding: 2px 6px;
+    font-size: 12px;
+    color: var(--text);
+    background: var(--surface0);
+    border: 1px solid var(--surface2);
+    border-radius: 4px;
+  }
+
+  .label-input:focus {
+    border-color: var(--blue);
+    outline: none;
+  }
+
+  .label-edit {
+    display: inline-flex;
+    margin-left: 4px;
+    padding: 2px 5px;
   }
 
   /* Integrity level badge in the detail panel */

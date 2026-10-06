@@ -95,6 +95,8 @@ export interface AppConfig {
     portsFavorites: string[];
     /** Port numbers the user watches; a toast fires when a process starts listening on one. */
     portsWatched: number[];
+    /** User-assigned labels per local port number (JSON keys are strings). */
+    portLabels: Record<string, string>;
   };
 }
 

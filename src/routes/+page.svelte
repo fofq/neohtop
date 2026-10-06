@@ -245,7 +245,14 @@
         const translate = get(t);
         for (const port of watchedPortList) {
           if (now.has(port) && !watchSeen.has(port)) {
-            processStore.showNotice(translate("ports.watchAppeared", { port }));
+            // Prefer the user's own name for the port when one is set
+            const label =
+              get(settingsStore).behavior.portLabels?.[String(port)] ?? "";
+            processStore.showNotice(
+              label
+                ? translate("ports.watchAppearedLabeled", { port, label })
+                : translate("ports.watchAppeared", { port }),
+            );
           }
         }
       }

@@ -35,5 +35,6 @@ export const DEFAULT_CONFIG: AppConfig = {
     portsViewMode: "flat",
     portsFavorites: [],
     portsWatched: [],
+    portLabels: {},
   },
 };
