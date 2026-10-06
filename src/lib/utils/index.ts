@@ -1,6 +1,7 @@
 import { get } from "svelte/store";
 import type { Process, ProcessTreeRow, SortConfig } from "$lib/types";
 import { t } from "$lib/i18n";
+import { isElevated } from "$lib/stores/elevation";
 
 export interface ProcessStatus {
   label: string;
@@ -496,13 +497,19 @@ const elevationErrorPattern =
   /access denied|administrator|elevated|privileges|permission denied|failed to kill|windows error 5\b|os error 5\b|\beperm\b/i;
 
 /**
- * Appends a hint about relaunching as administrator to backend error
- * messages that look like permission failures, so users stuck on a
- * protected process know there is a way out from the settings menu.
+ * Appends a recovery hint to backend error messages that look like
+ * permission failures. When the app is not elevated the hint points at
+ * the relaunch-as-admin flow; when it already IS elevated the same error
+ * means the target is protected or has a higher integrity level — telling
+ * the user to "relaunch as admin" would be a lie (the shield is already
+ * green), so the hint explains the protected-process case instead.
  */
 export function withElevationHint(message: string): string {
   if (!elevationErrorPattern.test(message)) {
     return message;
+  }
+  if (get(isElevated)) {
+    return `${message} — ${get(t)("settings.elevationHintElevated")}`;
   }
   return `${message} — ${get(t)("settings.elevationHint")}`;
 }

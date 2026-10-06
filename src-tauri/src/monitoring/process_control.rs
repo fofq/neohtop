@@ -168,7 +168,8 @@ mod platform {
         IDLE_PRIORITY_CLASS, NORMAL_PRIORITY_CLASS, OpenProcess, OpenProcessToken,
         PROCESS_ACCESS_RIGHTS, PROCESS_INFORMATION_CLASS, PROCESS_POWER_THROTTLING_CURRENT_VERSION,
         PROCESS_POWER_THROTTLING_EXECUTION_SPEED, PROCESS_POWER_THROTTLING_STATE,
-        PROCESS_QUERY_INFORMATION, PROCESS_SET_INFORMATION, PROCESS_SUSPEND_RESUME,
+        PROCESS_QUERY_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_SET_INFORMATION,
+        PROCESS_SUSPEND_RESUME,
         REALTIME_PRIORITY_CLASS, SetPriorityClass, SetProcessAffinityMask, SetProcessInformation,
     };
     use windows_sys::Win32::UI::Shell::{SHELLEXECUTEINFOW, ShellExecuteExW};
@@ -269,7 +270,12 @@ mod platform {
     }
 
     pub fn get_priority_info(pid: u32) -> Result<ProcessPriorityInfo, String> {
-        let handle = open_process(pid, PROCESS_QUERY_INFORMATION)?;
+        // GetPriorityClass/GetProcessAffinityMask/GetProcessInformation all
+        // accept a limited-query handle, and the full PROCESS_QUERY_INFORMATION
+        // is denied by some service-hosted processes even for elevated admins
+        // (error 5) — the very processes this app's metadata query reads fine
+        // with the limited right.
+        let handle = open_process(pid, PROCESS_QUERY_LIMITED_INFORMATION)?;
         // SAFETY: all three calls below only write into our own output
         // variables and the handle stays valid until CloseHandle
         let raw_class = unsafe { GetPriorityClass(handle) };

@@ -281,7 +281,6 @@ const zhCN: Record<TranslationKey, string> = {
 
   // Network ports modal: detail panel warnings
   "ports.warnWildcard": "监听所有网卡",
-  "ports.warnElevated": "以管理员权限运行",
   "ports.warnMemory": "内存占用超过 1 GB",
   "ports.warnRuntime": "已持续运行超过 90 天",
 
@@ -455,8 +454,6 @@ const zhCN: Record<TranslationKey, string> = {
   "ports.realtimeTitle": "实时刷新当前可见连接的速率（1 秒）",
   "ports.refresh": "刷新",
   "ports.refreshAria": "刷新连接",
-  "ports.received": "已接收",
-  "ports.sent": "已发送",
   "startup.searchPlaceholder": "搜索名称、命令或位置…",
   "startup.filterAll": "全部",
   "startup.noResults": "没有匹配的启动项",
@@ -518,6 +515,8 @@ const zhCN: Record<TranslationKey, string> = {
     "NeoHtop 将退出并以管理员权限重新启动，确定要继续吗？",
   "settings.elevationConfirm": "重启",
   "settings.elevationHint": "请以管理员身份运行 NeoHtop 后重试",
+  "settings.elevationHintElevated":
+    "该进程受系统保护或完整性更高，即使管理员也无法管理它",
 };
 
 export default zhCN;

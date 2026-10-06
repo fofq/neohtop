@@ -284,7 +284,6 @@ const en = {
 
   // Network ports modal: detail panel warnings
   "ports.warnWildcard": "Listening on all network interfaces",
-  "ports.warnElevated": "Running elevated",
   "ports.warnMemory": "Using more than 1 GB of memory",
   "ports.warnRuntime": "Running for more than 90 days",
 
@@ -463,8 +462,6 @@ const en = {
     "Refresh speeds of the visible connections every second",
   "ports.refresh": "Refresh",
   "ports.refreshAria": "Refresh connections",
-  "ports.received": "Received",
-  "ports.sent": "Sent",
   "startup.searchPlaceholder": "Search name, command or location…",
   "startup.filterAll": "All",
   "startup.noResults": "No matching startup items",
@@ -527,6 +524,8 @@ const en = {
     "NeoHtop will exit and relaunch with administrator privileges. Continue?",
   "settings.elevationConfirm": "Restart",
   "settings.elevationHint": "try running NeoHtop as administrator",
+  "settings.elevationHintElevated":
+    "this process is system-protected or has a higher integrity level; even an administrator cannot manage it",
 };
 
 export type TranslationKey = keyof typeof en;

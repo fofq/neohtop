@@ -694,9 +694,6 @@
     if (exposesToNetwork) {
       warnings.push({ key: "ports.warnWildcard", tone: "red" });
     }
-    if (metadata?.elevated) {
-      warnings.push({ key: "ports.warnElevated", tone: "red" });
-    }
     if (process && process.memory_usage > 1073741824) {
       warnings.push({ key: "ports.warnMemory", tone: "yellow" });
     }
@@ -930,27 +927,6 @@
     up: number;
   } {
     return speedByKey[connectionKey(connection)] ?? { down: 0, up: 0 };
-  }
-
-  /** Sums cumulative bytes and current speeds over a connection group */
-  function sumTraffic(list: PortConnection[]): {
-    down: number;
-    up: number;
-    received: number;
-    sent: number;
-  } {
-    let down = 0;
-    let up = 0;
-    let received = 0;
-    let sent = 0;
-    for (const connection of list) {
-      const speed = connectionSpeed(connection);
-      down += speed.down;
-      up += speed.up;
-      received += connection.bytes_received;
-      sent += connection.bytes_sent;
-    }
-    return { down, up, received, sent };
   }
 
   async function loadConnections(manual = false) {
@@ -3086,22 +3062,6 @@
           </tbody>
         </table>
       </div>
-
-      <!-- Connection-manager-style totals: live speeds and cumulative bytes
-           over everything that passed the current filters -->
-      {#if showSpeedCols && filteredConnections.length > 0}
-        {@const totals = sumTraffic(filteredConnections)}
-        <div class="ports-summary mono">
-          <span class="summary-item">↓ {speedText(totals.down)}</span>
-          <span class="summary-item">↑ {speedText(totals.up)}</span>
-          <span class="summary-item"
-            >{$t("ports.received")} {formatBytes(totals.received)}</span
-          >
-          <span class="summary-item"
-            >{$t("ports.sent")} {formatBytes(totals.sent)}</span
-          >
-        </div>
-      {/if}
     {/if}
   </div>
 </Modal>
@@ -3978,23 +3938,6 @@
   /* Traffic speed cells: quiet until something actually flows */
   .speed {
     color: var(--subtext0);
-  }
-
-  /* Bottom totals bar, Connection-Manager style */
-  .ports-summary {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 4px 16px;
-    align-items: center;
-    padding: 6px 10px;
-    font-size: 12px;
-    color: var(--subtext0);
-    background: var(--surface0);
-    border-radius: 6px;
-  }
-
-  .summary-item {
-    white-space: nowrap;
   }
 
   /* Port category tags (well-known local ports) */
