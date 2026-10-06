@@ -12,3 +12,5 @@ vite.config.ts.timestamp-*
 ## Jetbrains
 .idea/
 .run/
+## 本地工作记录（用户要求不入库）
+.记录/

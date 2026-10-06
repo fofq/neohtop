@@ -26,7 +26,7 @@
   let error: string | null = null;
   let searchTerm = "";
   let kindFilter: "all" | "registry" | "folder" | "task" | "service" = "all";
-  /** Enabled/disabled filter of the toggle state. */
+  /** Radio state filter: all items, or only enabled / only disabled ones. */
   let stateFilter: "all" | "enabled" | "disabled" = "all";
   /** Item id currently armed for a two-step delete confirmation. */
   let confirmDeleteId: string | null = null;
@@ -129,7 +129,10 @@
 
   function isSystemNative(item: StartupItem): boolean {
     if (item.kind === "task") {
-      return item.location.toLowerCase().startsWith("microsoft");
+      // Task locations are task paths ("\Microsoft\Windows\..."); the
+      // leading backslash must not defeat the prefix check.
+      const path = item.location.toLowerCase().replace(/^\\+/, "");
+      return path.startsWith("microsoft");
     }
     const binary = item.command.toLowerCase();
     return (
@@ -139,7 +142,7 @@
     );
   }
 
-  // Search + kind filter applied before grouping
+  // Search + kind/state filters applied before grouping
   $: query = searchTerm.trim().toLowerCase();
   $: filteredItems = items.filter((item) => {
     if (hideSystem && isSystemNative(item)) {
@@ -230,75 +233,84 @@
         placeholder={$t("startup.searchPlaceholder")}
         bind:value={searchTerm}
       />
-      <div class="kind-chips" role="group" aria-label={$t("startup.title")}>
-        <button
-          class="chip"
-          class:active={kindFilter === "all"}
-          on:click={() => (kindFilter = "all")}
-        >
-          {$t("startup.filterAll")}
-        </button>
-        <button
-          class="chip"
-          class:active={kindFilter === "registry"}
-          on:click={() => (kindFilter = "registry")}
-        >
-          {$t("startup.kindRegistry")}
-        </button>
-        <button
-          class="chip"
-          class:active={kindFilter === "folder"}
-          on:click={() => (kindFilter = "folder")}
-        >
-          {$t("startup.kindFolder")}
-        </button>
-        <button
-          class="chip"
-          class:active={kindFilter === "task"}
-          on:click={() => (kindFilter = "task")}
-        >
-          {$t("startup.kindTask")}
-        </button>
-        <button
-          class="chip"
-          class:active={kindFilter === "service"}
-          on:click={() => (kindFilter = "service")}
-        >
-          {$t("startup.kindService")}
-        </button>
-        <button
-          class="chip"
-          class:active={hideSystem}
-          on:click={() =>
-            settingsStore.updateConfig({
-              behavior: {
-                ...$settingsStore.behavior,
-                startupHideSystem: !hideSystem,
-              },
-            })}
-          title={$t("startup.hideSystem")}
-        >
-          {$t("startup.hideSystem")}
-        </button>
-        <button
-          class="chip"
-          class:active={stateFilter === "enabled"}
-          on:click={() =>
-            (stateFilter = stateFilter === "enabled" ? "all" : "enabled")}
-          title={$t("startup.stateEnabled")}
-        >
-          {$t("startup.stateEnabled")}
-        </button>
-        <button
-          class="chip"
-          class:active={stateFilter === "disabled"}
-          on:click={() =>
-            (stateFilter = stateFilter === "disabled" ? "all" : "disabled")}
-          title={$t("startup.stateDisabled")}
-        >
-          {$t("startup.stateDisabled")}
-        </button>
-      </div>
+      <button
+        class="chip toolbar-chip"
+        class:active={hideSystem}
+        on:click={() =>
+          settingsStore.updateConfig({
+            behavior: {
+              ...$settingsStore.behavior,
+              startupHideSystem: !hideSystem,
+            },
+          })}
+        title={$t("startup.hideSystem")}
+      >
+        {$t("startup.hideSystem")}
+      </button>
+    </div>
+
+    <!-- Labeled chip groups, mirroring the ports modal's filter row:
+         kind and state are two independent radio facets. -->
+    <div class="startup-chips" role="group" aria-label={$t("startup.title")}>
+      <span class="chip-label">{$t("startup.kindLabel")}</span>
+      <button
+        class="chip"
+        class:active={kindFilter === "all"}
+        on:click={() => (kindFilter = "all")}
+      >
+        {$t("startup.filterAll")}
+      </button>
+      <button
+        class="chip"
+        class:active={kindFilter === "registry"}
+        on:click={() => (kindFilter = "registry")}
+      >
+        {$t("startup.kindRegistry")}
+      </button>
+      <button
+        class="chip"
+        class:active={kindFilter === "folder"}
+        on:click={() => (kindFilter = "folder")}
+      >
+        {$t("startup.kindFolder")}
+      </button>
+      <button
+        class="chip"
+        class:active={kindFilter === "task"}
+        on:click={() => (kindFilter = "task")}
+      >
+        {$t("startup.kindTask")}
+      </button>
+      <button
+        class="chip"
+        class:active={kindFilter === "service"}
+        on:click={() => (kindFilter = "service")}
+      >
+        {$t("startup.kindService")}
+      </button>
+      <span class="chip-divider"></span>
+      <span class="chip-label">{$t("startup.stateLabel")}</span>
+      <button
+        class="chip"
+        class:active={stateFilter === "all"}
+        on:click={() => (stateFilter = "all")}
+      >
+        {$t("startup.filterAll")}
+      </button>
+      <button
+        class="chip"
+        class:active={stateFilter === "enabled"}
+        on:click={() => (stateFilter = "enabled")}
+      >
+        {$t("startup.stateEnabled")}
+      </button>
+      <button
+        class="chip"
+        class:active={stateFilter === "disabled"}
+        on:click={() => (stateFilter = "disabled")}
+      >
+        {$t("startup.stateDisabled")}
+      </button>
     </div>
 
     {#if error}
@@ -483,11 +495,30 @@
     border-color: var(--blue);
   }
 
-  .kind-chips {
+  /* The hide-built-in toggle rides in the search row as a view option,
+     sized to the input so the row reads as one control strip. */
+  .toolbar-chip {
+    height: 28px;
+  }
+
+  /* Labeled chip groups, mirroring the ports modal's filter row */
+  .startup-chips {
     display: flex;
-    flex-shrink: 0;
-    gap: 4px;
+    flex-wrap: wrap;
+    gap: 6px;
     align-items: center;
+  }
+
+  .chip-label {
+    font-size: 12px;
+    color: var(--subtext0);
+  }
+
+  .chip-divider {
+    width: 1px;
+    height: 16px;
+    margin: 0 4px;
+    background: var(--surface1);
   }
 
   .chip {

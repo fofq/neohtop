@@ -469,6 +469,8 @@ const en = {
   "ports.refreshAria": "Refresh connections",
   "startup.searchPlaceholder": "Search startup items…",
   "startup.filterAll": "All",
+  "startup.kindLabel": "Type",
+  "startup.stateLabel": "State",
   "startup.noResults": "No matching startup items",
   "startup.adminRequired": "Some system entries need administrator rights",
   "startup.empty": "No startup items found",

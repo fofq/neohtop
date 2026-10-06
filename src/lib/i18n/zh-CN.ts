@@ -461,6 +461,8 @@ const zhCN: Record<TranslationKey, string> = {
   "ports.refreshAria": "刷新连接",
   "startup.searchPlaceholder": "搜索启动项…",
   "startup.filterAll": "全部",
+  "startup.kindLabel": "类型",
+  "startup.stateLabel": "状态",
   "startup.noResults": "没有匹配的启动项",
   "startup.adminRequired": "部分系统项需要管理员权限",
   "startup.empty": "没有发现启动项",
