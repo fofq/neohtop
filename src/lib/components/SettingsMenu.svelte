@@ -205,6 +205,28 @@
 <svelte:window on:resize={() => showMenu && updatePanelPosition()} />
 
 <div class="settings-menu" bind:this={containerElement}>
+  <!-- Elevation shortcut: a one-glance status that turns green once the app
+       runs as admin; clicking relaunches elevated (confirm modal below).
+       Replaces the old settings-panel section — same flow, one less click. -->
+  {#if $isElevated}
+    <span
+      class="settings-button shield-button is-elevated"
+      role="status"
+      title={$t("settings.elevationRunning")}
+    >
+      <Fa icon={faShieldHalved} />
+    </span>
+  {:else}
+    <button
+      class="settings-button shield-button"
+      on:click={confirmRestartAsAdmin}
+      disabled={isRestartingAsAdmin}
+      title={$t("settings.elevationDescription")}
+      aria-label={$t("settings.elevationAction")}
+    >
+      <Fa icon={faShieldHalved} />
+    </button>
+  {/if}
   <button
     class="settings-button"
     class:active={showMenu}
@@ -248,33 +270,6 @@
           </div>
         </div>
       {/each}
-
-      <div class="menu-section">
-        <div class="section-label">{$t("settings.elevationSection")}</div>
-        {#if $isElevated}
-          <div class="elevation-status is-elevated" role="status">
-            <Fa icon={faShieldHalved} />
-            <span>{$t("settings.elevationRunning")}</span>
-          </div>
-        {:else if elevationNotice}
-          <div class="elevation-status is-relaunching" role="status">
-            <Fa icon={faShieldHalved} />
-            <span>{$t("settings.elevationRelaunching")}</span>
-          </div>
-        {:else}
-          <p class="elevation-description">
-            {$t("settings.elevationDescription")}
-          </p>
-          <button
-            class="elevation-button"
-            on:click={confirmRestartAsAdmin}
-            disabled={isRestartingAsAdmin}
-          >
-            <Fa icon={faShieldHalved} />
-            <span>{$t("settings.elevationAction")}</span>
-          </button>
-        {/if}
-      </div>
     </div>
   {/if}
 </div>
@@ -320,10 +315,30 @@
     position: absolute;
     right: 12px;
     top: 50%;
+    display: flex;
+    gap: 6px;
+    align-items: center;
     /* Centered via negative margin, not transform: a transformed ancestor
        becomes the containing block for position:fixed descendants, which
        would anchor the panel to this box and let the title bar clip it. */
     margin-top: -12px;
+  }
+
+  /* Shield shortcut: muted until elevated, green when admin is active */
+  .shield-button {
+    color: var(--subtext0);
+  }
+
+  .shield-button:hover {
+    color: var(--yellow);
+    border-color: var(--yellow);
+  }
+
+  .shield-button.is-elevated {
+    color: var(--green);
+    background: color-mix(in srgb, var(--green) 12%, transparent);
+    border-color: color-mix(in srgb, var(--green) 40%, transparent);
+    cursor: default;
   }
 
   .settings-button {
@@ -444,58 +459,6 @@
     height: 6px;
     border-radius: 50%;
     background: var(--blue);
-  }
-
-  .elevation-description {
-    margin: 0;
-    padding: 0 10px;
-    font-size: 11px;
-    line-height: 1.5;
-    color: var(--subtext0);
-  }
-
-  .elevation-button {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-    margin-top: 6px;
-    padding: 6px 10px;
-    font-size: 12px;
-    color: var(--text);
-    background: var(--surface0);
-    border: 1px solid var(--surface1);
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    text-align: left;
-    box-sizing: border-box;
-  }
-
-  .elevation-button:hover {
-    background: var(--surface1);
-    border-color: var(--blue);
-  }
-
-  .elevation-button:disabled {
-    opacity: 0.7;
-    cursor: not-allowed;
-  }
-
-  .elevation-status {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 4px 10px;
-    font-size: 12px;
-  }
-
-  .elevation-status.is-elevated {
-    color: var(--green);
-  }
-
-  .elevation-status.is-relaunching {
-    color: var(--peach);
   }
 
   .confirm-content {

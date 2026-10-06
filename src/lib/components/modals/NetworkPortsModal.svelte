@@ -472,13 +472,18 @@
   /** Security-relevant bind scope straight from the address: wildcard
    * binds accept connections from any interface (LAN included), loopback
    * binds are local-only. Specific adapter addresses get no badge. */
+  /** Bind scope of one address: wildcard binds accept connections from
+   * any interface (LAN included), loopback binds are local-only, other
+   * addresses are pinned to a specific adapter. Shown in the detail
+   * panel's "bind" fact — deliberately not a row badge, it would just
+   * repeat what the address column already says. */
   function bindScopeOf(
     connection: PortConnection,
-  ): "ports.bindAll" | "ports.bindLocal" | null {
+  ): "ports.bindAll" | "ports.bindLocal" | "ports.bindSpecific" {
     const addr = connection.local_addr;
     if (addr === "0.0.0.0" || addr === "::") return "ports.bindAll";
     if (addr === "127.0.0.1" || addr === "::1") return "ports.bindLocal";
-    return null;
+    return "ports.bindSpecific";
   }
 
   // --- Windows service attribution (witr-style) ----------------------------
@@ -669,19 +674,19 @@
   }
 
   // Warnings follow witr: security-relevant facts first (red), resource
-  // facts second (yellow). The wildcard-listen check spans every connection
-  // of the process, not just the one the panel was opened from.
+  // facts second (yellow). The wildcard-listen check looks at the very
+  // connection the panel was opened from — a process-level check would
+  // blame a loopback-bound listener for its siblings' wildcard binds.
   function buildDetailWarnings(
     process: Process | null,
     metadata: ProcessMetadata | null,
-    pidConnections: PortConnection[],
+    connection: PortConnection | null,
   ): DetailWarning[] {
     const warnings: DetailWarning[] = [];
-    const exposesToNetwork = pidConnections.some(
-      (entry) =>
-        stateBucketOf(entry.state) === "listen" &&
-        (entry.local_addr === "0.0.0.0" || entry.local_addr === "::"),
-    );
+    const exposesToNetwork =
+      connection !== null &&
+      stateBucketOf(connection.state) === "listen" &&
+      (connection.local_addr === "0.0.0.0" || connection.local_addr === "::");
     if (exposesToNetwork) {
       warnings.push({ key: "ports.warnWildcard", tone: "red" });
     }
@@ -1351,6 +1356,34 @@
     favoriteKeys,
   );
 
+  // --- Small-set auto-probing ---------------------------------------------
+  // When the user's filters narrow the view to a handful of listeners,
+  // probe them automatically: a curated view is an intentional request,
+  // and the role tags then read as if they were always there. The
+  // unfiltered table (hundreds of rows) is never scanned — beyond the
+  // limit nothing happens and the identify button stays the trigger.
+  // The probe cache makes re-runs on every snapshot a cheap no-op.
+  const AUTO_PROBE_LIMIT = 25;
+  $: {
+    if (show) {
+      const seen = new Set<string>();
+      let listenCount = 0;
+      for (const connection of filteredConnections) {
+        if (!isListenablePort(connection)) continue;
+        const key = roleKeyOf(connection);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        listenCount++;
+        if (listenCount > AUTO_PROBE_LIMIT) break;
+      }
+      if (listenCount > 0 && listenCount <= AUTO_PROBE_LIMIT) {
+        for (const connection of filteredConnections) {
+          if (isListenablePort(connection)) identifyPortRole(connection);
+        }
+      }
+    }
+  }
+
   // The flat view renders in pages: an unfiltered list can hold thousands of
   // rows, each with several buttons, so only the first page mounts and a
   // trailing button reveals more. Search, filters, focus and sorting restart
@@ -1498,12 +1531,8 @@
     detailIntegrity = null;
   }
 
-  $: detailPidConnections = detailConnection
-    ? connectionsOfPid(connections, detailConnection.pid)
-    : [];
-
   $: detailWarnings = detailConnection
-    ? buildDetailWarnings(detailProcess, detailMetadata, detailPidConnections)
+    ? buildDetailWarnings(detailProcess, detailMetadata, detailConnection)
     : [];
 
   async function loadDetailMetadata(process: Process) {
@@ -1523,13 +1552,6 @@
 
   function processByPid(processes: Process[], pid: number): Process | null {
     return processes.find((process) => process.pid === pid) ?? null;
-  }
-
-  function connectionsOfPid(
-    list: PortConnection[],
-    pid: number,
-  ): PortConnection[] {
-    return list.filter((connection) => connection.pid === pid);
   }
 
   /**
@@ -2225,7 +2247,6 @@
       {#snippet localPortCell(connection: PortConnection)}
         {@const category = categoryOf(connection)}
         {@const role = portRoleOf(connection)}
-        {@const bindScope = bindScopeOf(connection)}
         {@const label = portLabelOf(connection.local_port)}
         <td class="mono">
           {connection.local_addr}:{connection.local_port}
@@ -2241,9 +2262,6 @@
             <span class="role-tag role-{role.tag}"
               >{$t(`ports.role.${role.tag}`)}</span
             >
-          {/if}
-          {#if bindScope}
-            <span class="bind-scope">{$t(bindScope)}</span>
           {/if}
         </td>
       {/snippet}
@@ -2436,6 +2454,14 @@
                       <span class="fact-label">{$t("ports.fServer")}</span>
                       <span class="fact-value mono"
                         >{detailProbe.http.server}</span
+                      >
+                    </div>
+                  {/if}
+                  {#if detailConnection}
+                    <div class="fact">
+                      <span class="fact-label">{$t("ports.fBind")}</span>
+                      <span class="fact-value"
+                        >{$t(bindScopeOf(detailConnection))}</span
                       >
                     </div>
                   {/if}
@@ -4019,15 +4045,6 @@
   .role-tag.role-http_proxy {
     color: var(--sapphire);
     background: color-mix(in srgb, var(--sapphire) 14%, transparent);
-  }
-
-  /* Bind scope hint (all interfaces vs local only) — quieter than tags */
-  .bind-scope {
-    margin-left: 6px;
-    font-family: inherit;
-    font-size: 10px;
-    white-space: nowrap;
-    color: var(--overlay0);
   }
 
   /* User-assigned port label: the human name for this listener */
