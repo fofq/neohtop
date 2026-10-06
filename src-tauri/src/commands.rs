@@ -7,8 +7,8 @@
 use crate::monitoring::{
     AppWindow, DriverInfo, FileLocker, KillTreeResult, ModuleInfo, PortConnection, PortProbe,
     ProcessInfo, ProcessMetadata, ProcessMonitor, ProcessPriorityInfo, ServiceInfo, StartupItem,
-    SystemStats, TrafficCounters, collect_network_ports, file_lockers, identify_port,
-    listening_ports, network_ports, process_control, process_inspection, services, startup_items,
+    SystemStats, TrafficCounters, collect_network_ports, file_lockers, listening_ports,
+    network_ports, port_probe, process_control, process_inspection, services, startup_items,
     tcp_control, window_list,
 };
 use crate::state::AppState;
@@ -267,7 +267,9 @@ pub async fn get_listening_ports() -> Result<Vec<u16>, String> {
 /// findings, not errors.
 #[tauri::command]
 pub async fn identify_port(host: String, port: u16) -> Result<PortProbe, String> {
-    tauri::async_runtime::spawn_blocking(move || identify_port(&host, port))
+    // Module path required: the command's own name shadows the re-exported
+    // function inside this body (same collision process_control has)
+    tauri::async_runtime::spawn_blocking(move || port_probe::identify_port(&host, port))
         .await
         .map_err(|e| format!("Failed to probe port: {}", e))?
 }
