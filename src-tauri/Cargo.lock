@@ -1762,7 +1762,7 @@ dependencies = [
 
 [[package]]
 name = "neohtop"
-version = "1.4.5"
+version = "1.4.6"
 dependencies = [
  "serde",
  "serde_json",

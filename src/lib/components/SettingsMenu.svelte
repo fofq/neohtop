@@ -121,7 +121,6 @@
   let showElevationConfirm = false;
   let isRestartingAsAdmin = false;
   // Set once the elevated instance has been launched and this one is exiting
-  let elevationNotice = false;
   let elevationError: string | null = null;
 
   function confirmRestartAsAdmin() {
@@ -138,7 +137,7 @@
       const launched = await invoke<boolean>("restart_as_admin");
       showElevationConfirm = false;
       if (launched) {
-        elevationNotice = true;
+        // The relaunch dialog closes; the elevated instance takes over
       }
     } catch (e: unknown) {
       elevationError = e instanceof Error ? e.message : String(e);

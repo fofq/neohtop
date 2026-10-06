@@ -274,6 +274,9 @@ const en = {
   "ports.chainAncient": "Earlier ancestors have exited",
   "common.backToTop": "Back to top",
   "startup.hideSystem": "Hide built-in",
+  "startup.stateEnabled": "Enabled",
+  "startup.stateDisabled": "Disabled",
+  "startup.showAll": "Show all {count}",
   "ports.fUser": "User",
   "ports.fStartTime": "Start Time",
   "ports.fMemory": "Memory",
@@ -464,11 +467,10 @@ const en = {
     "Refresh speeds of the visible connections every second",
   "ports.refresh": "Refresh",
   "ports.refreshAria": "Refresh connections",
-  "startup.searchPlaceholder": "Search name, command or location…",
+  "startup.searchPlaceholder": "Search startup items…",
   "startup.filterAll": "All",
   "startup.noResults": "No matching startup items",
-  "startup.adminRequired":
-    "Not running as administrator: some system startup items may be hidden or unmanageable.",
+  "startup.adminRequired": "Some system entries need administrator rights",
   "startup.empty": "No startup items found",
   "startup.kindRegistry": "Registry",
   "startup.kindFolder": "Startup folder",
@@ -517,17 +519,16 @@ const en = {
   "settings.highlightDuration": "Highlight Duration",
   "settings.elevationSection": "Administrator",
   "settings.elevationRunning": "Running as administrator",
-  "settings.elevationRelaunching": "Restarting as administrator...",
+  "settings.elevationRelaunching": "Restarting…",
   "settings.elevationDescription":
     "Some operations — ending protected processes, managing services, closing connections — need administrator rights.",
   "settings.elevationAction": "Restart as Administrator",
   "settings.elevationConfirmTitle": "Restart as Administrator",
-  "settings.elevationConfirmMessage":
-    "NeoHtop will exit and relaunch with administrator privileges. Continue?",
+  "settings.elevationConfirmMessage": "Restart NeoHtop as administrator?",
   "settings.elevationConfirm": "Restart",
-  "settings.elevationHint": "try running NeoHtop as administrator",
+  "settings.elevationHint": "run as administrator and retry",
   "settings.elevationHintElevated":
-    "this process is system-protected or has a higher integrity level; even an administrator cannot manage it",
+    "this process is system-protected and cannot be managed",
 };
 
 export type TranslationKey = keyof typeof en;

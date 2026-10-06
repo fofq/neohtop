@@ -139,23 +139,22 @@ body {
   width: 34px;
   height: 34px;
   color: var(--text);
-  cursor: pointer;
   background: var(--surface0);
-  border: 1px solid var(--surface2);
+  border: 1px solid transparent;
   border-radius: 50%;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
-  opacity: 0;
-  visibility: hidden;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
+  /* Ghost state at the top of a list: a faint edge hint so the button's
+     resting place is discoverable, without shouting for attention. */
+  opacity: 0.14;
   pointer-events: none;
   transition:
     opacity 0.25s ease,
-    visibility 0.25s ease,
     border-color 0.2s ease;
 }
 
 .back-to-top.visible {
-  opacity: 0.35;
-  visibility: visible;
+  opacity: 0.4;
+  cursor: pointer;
   pointer-events: auto;
 }
 

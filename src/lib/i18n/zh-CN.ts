@@ -271,6 +271,9 @@ const zhCN: Record<TranslationKey, string> = {
   "ports.chainAncient": "更早的祖先进程已退出",
   "common.backToTop": "返回顶部",
   "startup.hideSystem": "隐藏系统自带",
+  "startup.stateEnabled": "已启用",
+  "startup.stateDisabled": "已禁用",
+  "startup.showAll": "显示全部 {count} 条",
   "ports.fUser": "用户",
   "ports.fStartTime": "启动时间",
   "ports.fMemory": "内存",
@@ -456,11 +459,10 @@ const zhCN: Record<TranslationKey, string> = {
   "ports.realtimeTitle": "实时刷新当前可见连接的速率（1 秒）",
   "ports.refresh": "刷新",
   "ports.refreshAria": "刷新连接",
-  "startup.searchPlaceholder": "搜索名称、命令或位置…",
+  "startup.searchPlaceholder": "搜索启动项…",
   "startup.filterAll": "全部",
   "startup.noResults": "没有匹配的启动项",
-  "startup.adminRequired":
-    "未以管理员身份运行：部分系统启动项可能无法显示或管理。",
+  "startup.adminRequired": "部分系统项需要管理员权限",
   "startup.empty": "没有发现启动项",
   "startup.kindRegistry": "注册表",
   "startup.kindFolder": "启动文件夹",
@@ -508,17 +510,15 @@ const zhCN: Record<TranslationKey, string> = {
   "settings.highlightDuration": "高亮时长",
   "settings.elevationSection": "管理员",
   "settings.elevationRunning": "正在以管理员身份运行",
-  "settings.elevationRelaunching": "正在以管理员身份重启...",
+  "settings.elevationRelaunching": "正在重启…",
   "settings.elevationDescription":
     "结束受保护进程、管理服务、关闭连接等操作需要管理员权限。",
   "settings.elevationAction": "以管理员身份重启",
   "settings.elevationConfirmTitle": "以管理员身份重启",
-  "settings.elevationConfirmMessage":
-    "NeoHtop 将退出并以管理员权限重新启动，确定要继续吗？",
+  "settings.elevationConfirmMessage": "以管理员身份重启 NeoHtop？",
   "settings.elevationConfirm": "重启",
-  "settings.elevationHint": "请以管理员身份运行 NeoHtop 后重试",
-  "settings.elevationHintElevated":
-    "该进程受系统保护或完整性更高，即使管理员也无法管理它",
+  "settings.elevationHint": "以管理员身份运行后重试",
+  "settings.elevationHintElevated": "该进程受系统保护，无法管理",
 };
 
 export default zhCN;

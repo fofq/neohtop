@@ -26,6 +26,8 @@
   let error: string | null = null;
   let searchTerm = "";
   let kindFilter: "all" | "registry" | "folder" | "task" | "service" = "all";
+  /** Enabled/disabled filter of the toggle state. */
+  let stateFilter: "all" | "enabled" | "disabled" = "all";
   /** Item id currently armed for a two-step delete confirmation. */
   let confirmDeleteId: string | null = null;
   let confirmTimer: ReturnType<typeof setTimeout> | null = null;
@@ -146,6 +148,12 @@
     if (kindFilter !== "all" && item.kind !== kindFilter) {
       return false;
     }
+    if (stateFilter === "enabled" && !item.enabled) {
+      return false;
+    }
+    if (stateFilter === "disabled" && item.enabled) {
+      return false;
+    }
     if (!query) return true;
     return (
       item.name.toLowerCase().includes(query) ||
@@ -181,6 +189,14 @@
       : section.kind === kindFilter,
   );
 
+  // Long sections render a preview slice with a "show all" expander so a
+  // 257-entry task folder cannot push everything miles below the fold.
+  const SECTION_PREVIEW = 25;
+  let expandedSections: Set<string> = new Set();
+  function expandSection(kind: string) {
+    expandedSections = new Set([...expandedSections, kind]);
+  }
+
   async function relaunchAsAdmin() {
     try {
       await invoke<boolean>("restart_as_admin");
@@ -190,7 +206,12 @@
   }
 </script>
 
-<Modal {show} title={$t("startup.title")} maxWidth="780px" {onClose}>
+<Modal
+  {show}
+  title={$t("startup.title")}
+  maxWidth="min(1100px, calc(100vw - 48px))"
+  {onClose}
+>
   <div class="startup-content">
     {#if !$isElevated}
       <div class="admin-banner">
@@ -259,6 +280,24 @@
         >
           {$t("startup.hideSystem")}
         </button>
+        <button
+          class="chip"
+          class:active={stateFilter === "enabled"}
+          on:click={() =>
+            (stateFilter = stateFilter === "enabled" ? "all" : "enabled")}
+          title={$t("startup.stateEnabled")}
+        >
+          {$t("startup.stateEnabled")}
+        </button>
+        <button
+          class="chip"
+          class:active={stateFilter === "disabled"}
+          on:click={() =>
+            (stateFilter = stateFilter === "disabled" ? "all" : "disabled")}
+          title={$t("startup.stateDisabled")}
+        >
+          {$t("startup.stateDisabled")}
+        </button>
       </div>
     </div>
 
@@ -289,7 +328,7 @@
             {#if section.entries.length === 0}
               <div class="section-empty">{$t("startup.empty")}</div>
             {:else}
-              {#each section.entries as item (item.id)}
+              {#each section.entries.slice(0, expandedSections.has(section.kind) ? section.entries.length : SECTION_PREVIEW) as item (item.id)}
                 <div class="item-row" class:disabled={!item.enabled}>
                   <button
                     class="toggle"
@@ -343,6 +382,14 @@
                   {/if}
                 </div>
               {/each}
+              {#if section.entries.length > SECTION_PREVIEW && !expandedSections.has(section.kind)}
+                <button
+                  class="section-more"
+                  on:click={() => expandSection(section.kind)}
+                >
+                  {$t("startup.showAll", { count: section.entries.length })}
+                </button>
+              {/if}
             {/if}
           </div>
         {/each}
@@ -357,8 +404,8 @@
   .startup-content {
     display: flex;
     flex-direction: column;
-    gap: 12px;
-    max-height: 65vh;
+    gap: 10px;
+    max-height: 78vh;
   }
 
   .startup-toolbar {
@@ -371,7 +418,7 @@
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 8px;
     scrollbar-width: thin;
     scrollbar-color: var(--surface2) var(--mantle);
   }
@@ -524,9 +571,24 @@
     display: flex;
     gap: 10px;
     align-items: center;
-    padding: 8px 10px;
+    padding: 5px 10px;
     background: var(--mantle);
     border-radius: 6px;
+  }
+
+  .section-more {
+    padding: 4px 10px;
+    font-size: 12px;
+    color: var(--blue);
+    cursor: pointer;
+    background: var(--surface0);
+    border: none;
+    border-radius: 6px;
+    text-align: left;
+  }
+
+  .section-more:hover {
+    background: var(--surface1);
   }
 
   .item-row.disabled .item-name {
