@@ -220,8 +220,10 @@ fn probe_http(addr: SocketAddr) -> Option<HttpProbe> {
         .map(|ping_reply| String::from_utf8_lossy(&ping_reply).into_owned());
     let ping_ok = ping_reply
         .as_deref()
-        .and_then(|text| parse_status(text))
-        .map(|code| code == 200 && text_body(text).contains("OK"))
+        .and_then(|ping_text| {
+            parse_status(ping_text)
+                .map(|code| code == 200 && text_body(ping_text).contains("OK"))
+        })
         .unwrap_or(false);
     Some(HttpProbe {
         status,
