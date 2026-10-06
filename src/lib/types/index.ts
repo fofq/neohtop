@@ -178,6 +178,8 @@ export interface HttpProbe {
   www_authenticate: boolean;
   /** `GET /version` answered with version-shaped JSON (clash/mihomo controller). */
   version_json: boolean;
+  /** `GET /version` answered 401 (secret-guarded controller API). */
+  version_auth: boolean;
 }
 
 /** Mechanical probe findings for one TCP listener (port_probe.rs). */

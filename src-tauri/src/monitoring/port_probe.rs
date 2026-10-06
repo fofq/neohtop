@@ -54,6 +54,10 @@ pub struct HttpProbe {
     /// `GET /version` answered with a version-shaped JSON body (the
     /// clash/mihomo external-controller signature)
     pub version_json: bool,
+    /// `GET /version` answered 401: a secret-guarded core API refuses the
+    /// unauthenticated probe, and the 401 body carries no version field —
+    /// this is the controller signature an open probe can still see
+    pub version_auth: bool,
 }
 
 /// Probes one listener and returns the mechanical findings. `host` must
@@ -143,16 +147,23 @@ fn probe_http(addr: SocketAddr) -> Option<HttpProbe> {
     let status = parse_status(&text)?;
     let server = header_value(&text, "server");
     let www_authenticate = header_value(&text, "www-authenticate").is_some();
-    let version_json = http_request(addr, "GET /version")
-        .map(|version_reply| {
-            String::from_utf8_lossy(&version_reply).contains("\"version\"")
-        })
+    let version_reply = http_request(addr, "GET /version")
+        .map(|version_reply| String::from_utf8_lossy(&version_reply).into_owned());
+    let version_json = version_reply
+        .as_deref()
+        .map(|text| text.contains("\"version\""))
+        .unwrap_or(false);
+    let version_auth = version_reply
+        .as_deref()
+        .and_then(|text| parse_status(text))
+        .map(|code| code == 401)
         .unwrap_or(false);
     Some(HttpProbe {
         status,
         server,
         www_authenticate,
         version_json,
+        version_auth,
     })
 }
 

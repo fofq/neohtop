@@ -401,9 +401,14 @@
     if (probe.socks5 && probe.http) return { tag: "mixed", open: null };
     if (probe.socks5) return { tag: "socks", open: null };
     if (probe.http) {
+      // A secret-guarded core never hands the probe a version body: the
+      // unauthenticated /version (or /) request is answered with 401, and
+      // 401 on a proxy process's HTTP listener is the controller — real
+      // proxy auth denials answer 407, not 401.
       const controllerish =
         probe.http.version_json ||
-        (probe.http.www_authenticate && probe.http.status === 401);
+        probe.http.version_auth ||
+        probe.http.status === 401;
       if (controllerish && isProxyProcess) {
         return { tag: "controller", open: "panel" };
       }
@@ -2105,6 +2110,14 @@
       {#snippet rowActions(connection: PortConnection)}
         {@const favorited = favoriteKeys.has(portKeyOf(connection))}
         {@const portActionKey = connectionKey(connection)}
+        {@const listenable = isListenablePort(connection)}
+        {@const watched = watchedPorts.includes(connection.local_port)}
+        {@const role = portRoleOf(connection)}
+        {@const killable = canKillProcess(connection.pid)}
+        {@const closable = canCloseConnection(connection)}
+        <!-- Nine fixed slots: actions a row cannot use keep their place
+             (visibility only), so the cluster is identical in every row
+             and each button lands on the same column position -->
         <div class="row-actions">
           <button
             class="focus-btn star-btn"
@@ -2119,20 +2132,19 @@
           >
             <Fa icon={faStar} />
           </button>
-          {#if connection.state === "LISTEN"}
-            {@const watched = watchedPorts.includes(connection.local_port)}
-            <button
-              class="focus-btn watch-btn"
-              class:active={watched}
-              on:click={() => togglePortWatch(connection.local_port)}
-              title={watched ? $t("ports.watchRemove") : $t("ports.watchAdd")}
-              aria-label={watched
-                ? $t("ports.watchRemove")
-                : $t("ports.watchAdd")}
-            >
-              <Fa icon={faBell} />
-            </button>
-          {/if}
+          <button
+            class="focus-btn watch-btn"
+            class:active={watched}
+            class:slot-off={!listenable}
+            disabled={!listenable}
+            on:click={() => togglePortWatch(connection.local_port)}
+            title={watched ? $t("ports.watchRemove") : $t("ports.watchAdd")}
+            aria-label={watched
+              ? $t("ports.watchRemove")
+              : $t("ports.watchAdd")}
+          >
+            <Fa icon={faBell} />
+          </button>
           <button
             class="focus-btn"
             class:active={detailConnection === connection}
@@ -2142,43 +2154,44 @@
           >
             <Fa icon={faCircleInfo} />
           </button>
-          {#if isListenablePort(connection)}
-            {@const role = portRoleOf(connection)}
-            {#if role?.open}
-              <button
-                class="focus-btn"
-                on:click={() => openPortInBrowser(connection)}
-                title={$t("ports.openInBrowser")}
-                aria-label={$t("ports.openInBrowser")}
-              >
-                <Fa icon={faUpRightFromSquare} />
-              </button>
-            {/if}
-            <button
-              class="focus-btn"
-              class:copied={copiedPortKeys.has(portActionKey)}
-              on:click={() => copyPortAddress(connection)}
-              title={$t("ports.copyAddress")}
-              aria-label={$t("ports.copyAddress")}
-            >
-              <Fa icon={copiedPortKeys.has(portActionKey) ? faCheck : faCopy} />
-            </button>
-            <button
-              class="focus-btn"
-              class:active={identifiedKeys.has(roleKeyOf(connection))}
-              disabled={probingKeys.has(roleKeyOf(connection))}
-              on:click={() => identifyPortRole(connection)}
-              title={$t("ports.identify")}
-              aria-label={$t("ports.identify")}
-            >
-              <Fa
-                icon={probingKeys.has(roleKeyOf(connection))
-                  ? faSpinner
-                  : faStethoscope}
-                spin={probingKeys.has(roleKeyOf(connection))}
-              />
-            </button>
-          {/if}
+          <button
+            class="focus-btn"
+            class:open-ready={listenable && !!role?.open}
+            class:slot-off={!listenable || !role?.open}
+            disabled={!listenable || !role?.open}
+            on:click={() => openPortInBrowser(connection)}
+            title={$t("ports.openInBrowser")}
+            aria-label={$t("ports.openInBrowser")}
+          >
+            <Fa icon={faUpRightFromSquare} />
+          </button>
+          <button
+            class="focus-btn"
+            class:copied={copiedPortKeys.has(portActionKey)}
+            class:slot-off={!listenable}
+            disabled={!listenable}
+            on:click={() => copyPortAddress(connection)}
+            title={$t("ports.copyAddress")}
+            aria-label={$t("ports.copyAddress")}
+          >
+            <Fa icon={copiedPortKeys.has(portActionKey) ? faCheck : faCopy} />
+          </button>
+          <button
+            class="focus-btn"
+            class:active={identifiedKeys.has(roleKeyOf(connection))}
+            class:slot-off={!listenable}
+            disabled={!listenable || probingKeys.has(roleKeyOf(connection))}
+            on:click={() => identifyPortRole(connection)}
+            title={$t("ports.identify")}
+            aria-label={$t("ports.identify")}
+          >
+            <Fa
+              icon={probingKeys.has(roleKeyOf(connection))
+                ? faSpinner
+                : faStethoscope}
+              spin={probingKeys.has(roleKeyOf(connection))}
+            />
+          </button>
           <button
             class="focus-btn"
             class:active={focusedPid === connection.pid}
@@ -2188,30 +2201,30 @@
           >
             <Fa icon={faCrosshairs} />
           </button>
-          {#if canKillProcess(connection.pid)}
-            <button
-              class="focus-btn danger"
-              on:click={() =>
-                confirmKillProcess(
-                  connection.pid,
-                  processNameByPid.get(connection.pid) ?? "-",
-                )}
-              title={$t("ports.killProcess")}
-              aria-label={$t("ports.killProcess")}
-            >
-              <Fa icon={faBan} />
-            </button>
-          {/if}
-          {#if canCloseConnection(connection)}
-            <button
-              class="focus-btn danger"
-              on:click={() => confirmCloseConnection(connection)}
-              title={$t("ports.closeConnection")}
-              aria-label={$t("ports.closeConnection")}
-            >
-              <Fa icon={faXmark} />
-            </button>
-          {/if}
+          <button
+            class="focus-btn danger"
+            class:slot-off={!killable}
+            disabled={!killable}
+            on:click={() =>
+              confirmKillProcess(
+                connection.pid,
+                processNameByPid.get(connection.pid) ?? "-",
+              )}
+            title={$t("ports.killProcess")}
+            aria-label={$t("ports.killProcess")}
+          >
+            <Fa icon={faBan} />
+          </button>
+          <button
+            class="focus-btn danger"
+            class:slot-off={!closable}
+            disabled={!closable}
+            on:click={() => confirmCloseConnection(connection)}
+            title={$t("ports.closeConnection")}
+            aria-label={$t("ports.closeConnection")}
+          >
+            <Fa icon={faXmark} />
+          </button>
         </div>
         {#if portActionNotice && portActionNotice.key === portActionKey}
           <span class="row-notice">{portActionNotice.message}</span>
@@ -3518,10 +3531,12 @@
     opacity: 1;
   }
 
-  /* Wide enough for the busiest cluster (star, details, browser, copy,
-     focus, kill, close) */
+  /* Wide enough for the full nine-slot cluster (star, watch, details,
+     browser, copy, identify, focus, kill, close) — rows with fewer
+     usable actions reserve their slots invisibly, keeping the rest
+     aligned on shared column positions */
   .actions-col {
-    width: 198px;
+    width: 250px;
     text-align: center;
   }
 
@@ -3603,6 +3618,20 @@
     display: inline-flex;
     gap: 4px;
     align-items: center;
+  }
+
+  /* A slot a row cannot use stays in the layout invisibly: visibility
+     (not display) keeps every other button on its column position */
+  .focus-btn.slot-off {
+    visibility: hidden;
+    pointer-events: none;
+  }
+
+  /* Browser-openable listeners keep the open button on screen, so an
+     actionable port advertises it without a hover */
+  .focus-btn.open-ready {
+    opacity: 1;
+    color: var(--blue);
   }
 
   /* Failure hint of the port browser actions: a transient line under the
