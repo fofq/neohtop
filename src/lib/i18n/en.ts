@@ -271,7 +271,8 @@ const en = {
   "ports.siblings": "Siblings ({count})",
   "ports.chainLabel": "Process ancestry",
   "ports.chainBroken": "Parent exited or not visible",
-  "ports.chainAncient": "Earlier ancestors have exited",
+  "ports.chainAncient":
+    "Chain ends here — the next ancestor has exited (normal for short-lived launchers)",
   "common.backToTop": "Back to top",
   "startup.hideSystem": "Hide built-in",
   "startup.stateEnabled": "Enabled",

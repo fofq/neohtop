@@ -24,7 +24,7 @@
   },
   "productName": "NeoHtop",
   "mainBinaryName": "NeoHtop",
-  "version": "1.4.12",
+  "version": "1.4.13",
   "identifier": "com.neohtop.dev",
   "plugins": {
     "os": {
