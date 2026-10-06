@@ -1445,11 +1445,16 @@
     roleCacheVersion,
   );
 
+  // "With traffic only": a row counts as traffic-carrying while its
+  // CURRENT speed would render a rate (≥1 B/s, exactly what the speed
+  // columns show) — not merely because it once moved bytes. speedByKey
+  // is referenced inside so rows drop out of the view as they idle.
   $: trafficFilteredConnections = hideIdle
-    ? categoryFilteredConnections.filter(
-        (connection) =>
-          connection.bytes_sent > 0 || connection.bytes_received > 0,
-      )
+    ? categoryFilteredConnections.filter((connection) => {
+        void speedByKey;
+        const speed = connectionSpeed(connection);
+        return speed.down >= 1 || speed.up >= 1;
+      })
     : categoryFilteredConnections;
 
   $: favoritesFilteredConnections = favoritesOnly
