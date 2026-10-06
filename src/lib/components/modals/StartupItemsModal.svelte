@@ -11,9 +11,10 @@
     faTrash,
     faTriangleExclamation,
   } from "@fortawesome/free-solid-svg-icons";
+  import { backToTop } from "$lib/actions/backToTop";
   import { Modal } from "$lib/components";
   import { t } from "$lib/i18n";
-  import { isElevated } from "$lib/stores";
+  import { isElevated, settingsStore } from "$lib/stores";
   import { withElevationHint } from "$lib/utils";
   import type { StartupItem } from "$lib/types";
 
@@ -119,9 +120,29 @@
 
   onDestroy(disarmConfirm);
 
+  // Windows built-ins (svchost-hosted services, drivers, tasks under
+  // \Microsoft\, binaries inside C:\Windows) drown the panel — the
+  // default view hides them, the chip brings them back.
+  $: hideSystem = $settingsStore.behavior.startupHideSystem ?? true;
+
+  function isSystemNative(item: StartupItem): boolean {
+    if (item.kind === "task") {
+      return item.location.toLowerCase().startsWith("microsoft");
+    }
+    const binary = item.command.toLowerCase();
+    return (
+      binary.includes("c:windows") ||
+      binary.includes("system32") ||
+      binary.includes("systemroot")
+    );
+  }
+
   // Search + kind filter applied before grouping
   $: query = searchTerm.trim().toLowerCase();
   $: filteredItems = items.filter((item) => {
+    if (hideSystem && isSystemNative(item)) {
+      return false;
+    }
     if (kindFilter !== "all" && item.kind !== kindFilter) {
       return false;
     }
@@ -152,6 +173,13 @@
       entries: serviceItems,
     },
   ];
+  // A selected kind renders exactly its own section; the "all" view skips
+  // empty sections instead of stacking four "nothing found" walls.
+  $: visibleSections = sections.filter((section) =>
+    kindFilter === "all"
+      ? section.entries.length > 0
+      : section.kind === kindFilter,
+  );
 
   async function relaunchAsAdmin() {
     try {
@@ -217,6 +245,20 @@
         >
           {$t("startup.kindService")}
         </button>
+        <button
+          class="chip"
+          class:active={hideSystem}
+          on:click={() =>
+            settingsStore.updateConfig({
+              behavior: {
+                ...$settingsStore.behavior,
+                startupHideSystem: !hideSystem,
+              },
+            })}
+          title={$t("startup.hideSystem")}
+        >
+          {$t("startup.hideSystem")}
+        </button>
       </div>
     </div>
 
@@ -227,93 +269,111 @@
       </div>
     {/if}
 
-    {#if isLoading && items.length === 0}
-      <div class="startup-status">
-        <div class="spinner"></div>
-      </div>
-    {:else if filteredItems.length === 0}
-      <div class="startup-status">{$t("startup.noResults")}</div>
-    {:else}
-      {#each sections as section (section.kind)}
-        <div class="section">
-          <div class="section-head">
-            <span class="section-icon"
-              ><Fa icon={kindIcon(section.kind)} /></span
-            >
-            <span class="section-label">{section.label}</span>
-            <span class="section-count">{section.entries.length}</span>
-          </div>
-          {#if section.entries.length === 0}
-            <div class="section-empty">{$t("startup.empty")}</div>
-          {:else}
-            {#each section.entries as item (item.id)}
-              <div class="item-row" class:disabled={!item.enabled}>
-                <button
-                  class="toggle"
-                  class:off={!item.enabled}
-                  disabled={busyId === item.id}
-                  on:click={() => toggle(item)}
-                  title={item.enabled
-                    ? $t("startup.disable")
-                    : $t("startup.enable")}
-                  aria-label={item.enabled
-                    ? $t("startup.disable")
-                    : $t("startup.enable")}
-                >
-                  <span class="knob"></span>
-                </button>
-                <div class="item-main">
-                  <div class="item-name" title={item.name}>
-                    {item.name}
-                    {#if item.detail}
-                      <span class="item-detail"
-                        >{triggerLabel(item.detail)}</span
-                      >
-                    {/if}
-                  </div>
-                  {#if item.command}
-                    <div class="item-command" title={item.command}>
-                      {item.command}
-                    </div>
-                  {/if}
-                  <div class="item-location" title={item.location}>
-                    {item.location}
-                  </div>
-                </div>
-                {#if item.kind !== "service"}
-                  <button
-                    class="delete-btn"
-                    class:confirming={confirmDeleteId === item.id}
-                    on:click={() => remove(item)}
-                    title={confirmDeleteId === item.id
-                      ? $t("startup.deleteConfirm")
-                      : $t("startup.delete")}
-                    aria-label={confirmDeleteId === item.id
-                      ? $t("startup.deleteConfirm")
-                      : $t("startup.delete")}
-                  >
-                    <Fa icon={faTrash} />
-                    {#if confirmDeleteId === item.id}
-                      <span>{$t("startup.deleteConfirm")}</span>
-                    {/if}
-                  </button>
-                {/if}
-              </div>
-            {/each}
-          {/if}
+    <div class="startup-list" use:backToTop>
+      {#if isLoading && items.length === 0}
+        <div class="startup-status">
+          <div class="spinner"></div>
         </div>
-      {/each}
-    {/if}
+      {:else if filteredItems.length === 0}
+        <div class="startup-status">{$t("startup.noResults")}</div>
+      {:else}
+        {#each visibleSections as section (section.kind)}
+          <div class="section">
+            <div class="section-head">
+              <span class="section-icon"
+                ><Fa icon={kindIcon(section.kind)} /></span
+              >
+              <span class="section-label">{section.label}</span>
+              <span class="section-count">{section.entries.length}</span>
+            </div>
+            {#if section.entries.length === 0}
+              <div class="section-empty">{$t("startup.empty")}</div>
+            {:else}
+              {#each section.entries as item (item.id)}
+                <div class="item-row" class:disabled={!item.enabled}>
+                  <button
+                    class="toggle"
+                    class:off={!item.enabled}
+                    disabled={busyId === item.id}
+                    on:click={() => toggle(item)}
+                    title={item.enabled
+                      ? $t("startup.disable")
+                      : $t("startup.enable")}
+                    aria-label={item.enabled
+                      ? $t("startup.disable")
+                      : $t("startup.enable")}
+                  >
+                    <span class="knob"></span>
+                  </button>
+                  <div class="item-main">
+                    <div class="item-name" title={item.name}>
+                      {item.name}
+                      {#if item.detail}
+                        <span class="item-detail"
+                          >{triggerLabel(item.detail)}</span
+                        >
+                      {/if}
+                    </div>
+                    {#if item.command}
+                      <div class="item-command" title={item.command}>
+                        {item.command}
+                      </div>
+                    {/if}
+                    <div class="item-location" title={item.location}>
+                      {item.location}
+                    </div>
+                  </div>
+                  {#if item.kind !== "service"}
+                    <button
+                      class="delete-btn"
+                      class:confirming={confirmDeleteId === item.id}
+                      on:click={() => remove(item)}
+                      title={confirmDeleteId === item.id
+                        ? $t("startup.deleteConfirm")
+                        : $t("startup.delete")}
+                      aria-label={confirmDeleteId === item.id
+                        ? $t("startup.deleteConfirm")
+                        : $t("startup.delete")}
+                    >
+                      <Fa icon={faTrash} />
+                      {#if confirmDeleteId === item.id}
+                        <span>{$t("startup.deleteConfirm")}</span>
+                      {/if}
+                    </button>
+                  {/if}
+                </div>
+              {/each}
+            {/if}
+          </div>
+        {/each}
+      {/if}
+    </div>
   </div>
 </Modal>
 
 <style>
+  /* Mirror the ports modal: the toolbar row stays fixed and only the
+     list below scrolls, so filters remain reachable at any depth. */
   .startup-content {
     display: flex;
     flex-direction: column;
     gap: 12px;
     max-height: 65vh;
+  }
+
+  .startup-toolbar {
+    flex-shrink: 0;
+  }
+
+  .startup-list {
+    flex: 1;
+    min-height: 0;
     overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    scrollbar-width: thin;
+    scrollbar-color: var(--surface2) var(--mantle);
   }
 
   .admin-banner {

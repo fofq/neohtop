@@ -36,5 +36,6 @@ export const DEFAULT_CONFIG: AppConfig = {
     portsFavorites: [],
     portsWatched: [],
     portLabels: {},
+    startupHideSystem: true,
   },
 };

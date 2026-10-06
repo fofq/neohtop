@@ -269,6 +269,8 @@ const zhCN: Record<TranslationKey, string> = {
   "ports.chainLabel": "因果链",
   "ports.chainBroken": "父进程已退出或不可见",
   "ports.chainAncient": "更早的祖先进程已退出",
+  "common.backToTop": "返回顶部",
+  "startup.hideSystem": "隐藏系统自带",
   "ports.fUser": "用户",
   "ports.fStartTime": "启动时间",
   "ports.fMemory": "内存",

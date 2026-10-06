@@ -97,6 +97,9 @@ export interface AppConfig {
     portsWatched: number[];
     /** User-assigned labels per local port number (JSON keys are strings). */
     portLabels: Record<string, string>;
+    /** Startup panel hides Windows built-in entries (services/tasks under
+     * system paths) by default; the chip toggles them back. */
+    startupHideSystem: boolean;
   };
 }
 

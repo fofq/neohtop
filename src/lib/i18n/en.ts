@@ -272,6 +272,8 @@ const en = {
   "ports.chainLabel": "Process ancestry",
   "ports.chainBroken": "Parent exited or not visible",
   "ports.chainAncient": "Earlier ancestors have exited",
+  "common.backToTop": "Back to top",
+  "startup.hideSystem": "Hide built-in",
   "ports.fUser": "User",
   "ports.fStartTime": "Start Time",
   "ports.fMemory": "Memory",

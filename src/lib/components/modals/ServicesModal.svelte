@@ -14,6 +14,7 @@
     faRefresh,
     faStop,
   } from "@fortawesome/free-solid-svg-icons";
+  import { backToTop } from "$lib/actions/backToTop";
   import { Modal } from "$lib/components";
   import { t } from "$lib/i18n";
   import { processStore } from "$lib/stores/index";
@@ -399,7 +400,7 @@
             total: services.length,
           })}
         </div>
-        <div class="table-wrap">
+        <div class="table-wrap" use:backToTop>
           <table>
             <thead>
               <tr>

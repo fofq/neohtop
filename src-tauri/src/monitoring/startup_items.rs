@@ -517,15 +517,25 @@ mod platform {
         let text = decode_console_output(&output.stdout);
         for line in text.lines() {
             let fields = parse_csv_line(line);
-            if fields.len() < 4 {
+            if fields.is_empty() {
                 continue;
             }
-            let task_path =
-                fields[1].trim().trim_start_matches('\\').to_string();
+            // Column layout differs by Windows build: older schtasks emits
+            // "host","taskname","next run","status" while Windows 11 24H2+
+            // dropped the host column ("taskname","next run","status").
+            // The task path is the field starting with a backslash in both
+            // layouts, and the status is always the trailing field.
+            let task_path = match fields
+                .iter()
+                .find(|field| field.trim_start().starts_with('\\'))
+            {
+                Some(field) => field.trim().trim_start_matches('\\').to_string(),
+                None => continue,
+            };
             if task_path.is_empty() {
                 continue;
             }
-            let status = fields[3].trim();
+            let status = fields.last().map(|f| f.trim()).unwrap_or("");
             let disabled_by_status = status.contains("已禁用")
                 || status.to_lowercase().contains("disabled");
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { backToTop } from "$lib/actions/backToTop";
   import type { Process, ProcessTreeRow, Column } from "$lib/types";
   import { TableHeader, ProcessRow, ProcessContextMenu } from "$lib/components";
   import { computeNameColumnWidth } from "$lib/utils";
@@ -170,6 +171,7 @@
 <div
   class="table-container"
   style="--row-highlight-duration: {highlightDurationMs}ms"
+  use:backToTop
 >
   <table bind:this={tableElement}>
     <colgroup>

@@ -30,6 +30,7 @@
     faXmark,
     faPen,
   } from "@fortawesome/free-solid-svg-icons";
+  import { backToTop } from "$lib/actions/backToTop";
   import { Modal } from "$lib/components";
   import { t } from "$lib/i18n";
   import {
@@ -2652,7 +2653,7 @@
         {/if}
       {/snippet}
 
-      <div class="table-wrap">
+      <div class="table-wrap" use:backToTop>
         <table>
           <thead>
             <tr>
