@@ -246,9 +246,10 @@ pub async fn get_network_ports() -> Result<Vec<PortConnection>, String> {
 pub async fn list_container_ports() -> Result<Vec<ContainerPort>, String> {
     // Module path required: the command's own name shadows the re-exported
     // function inside this body (same collision process_control has)
-    tauri::async_runtime::spawn_blocking(|| container_ports::list())
+    let ports = tauri::async_runtime::spawn_blocking(container_ports::list)
         .await
-        .map_err(|e| format!("Failed to collect container ports: {}", e))?
+        .map_err(|e| format!("Failed to collect container ports: {}", e))?;
+    Ok(ports)
 }
 
 /// Lists the local TCP ports that currently have a process listening
