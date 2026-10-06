@@ -62,6 +62,7 @@ fn main() {
             commands::get_traffic_counters,
             commands::get_listening_ports,
             commands::identify_port,
+            commands::list_container_ports,
             commands::suspend_process,
             commands::resume_process,
             commands::get_process_priority_info,

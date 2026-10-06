@@ -26,12 +26,15 @@ pub(crate) mod startup_items;
 pub(crate) mod services;
 pub(crate) mod tcp_control;
 pub(crate) mod window_list;
+// Published-port → container attribution via the docker/podman CLIs
+pub(crate) mod container_ports;
 
 pub use file_lockers::FileLocker;
 pub use port_probe::{PortProbe, identify_port};
 pub use process_inspection::{DriverInfo, ModuleInfo, ProcessMetadata};
 pub use services::ServiceInfo;
 pub use window_list::AppWindow;
+pub use container_ports::ContainerPort;
 pub use network_ports::{
     PortConnection, TrafficCounters, collect as collect_network_ports, listening_ports,
     traffic_counters,

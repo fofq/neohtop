@@ -452,6 +452,7 @@ const en = {
   "ports.fWindowsService": "Windows service",
   "ports.fLabel": "Label",
   "ports.fBind": "Bind scope",
+  "ports.fContainer": "Container",
   "ports.editLabel": "Edit port label",
   "ports.labelPlaceholder": "e.g. TUN internal",
   "ports.binaryMissing": "Binary deleted",

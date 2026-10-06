@@ -445,6 +445,7 @@ const zhCN: Record<TranslationKey, string> = {
   "ports.fWindowsService": "系统服务",
   "ports.fLabel": "备注",
   "ports.fBind": "绑定",
+  "ports.fContainer": "容器归属",
   "ports.editLabel": "编辑端口备注",
   "ports.labelPlaceholder": "例如：TUN 内部",
   "ports.binaryMissing": "二进制文件已被删除",

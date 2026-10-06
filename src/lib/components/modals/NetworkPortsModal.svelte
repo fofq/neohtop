@@ -47,6 +47,7 @@
     withElevationHint,
   } from "$lib/utils";
   import type {
+    ContainerPort,
     PortConnection,
     PortProbe,
     PortsViewMode,
@@ -521,7 +522,71 @@
     return servicesByPid.get(pid) ?? [];
   }
 
-  // --- User port labels (port-killer style) --------------------------------
+  // --- Container port attribution (witr-style) ----------------------------
+  // A published port bound by a Docker/Podman forwarder belongs to the
+  // container behind it, not to the forwarder process. The mapping comes
+  // from one `docker ps` / `podman ps` call per modal session; engines
+  // that are missing or stopped simply contribute nothing.
+  let containerPorts: ContainerPort[] = [];
+  let containerPortsLoaded = false;
+
+  async function loadContainerPorts() {
+    if (containerPortsLoaded) return;
+    containerPortsLoaded = true;
+    try {
+      containerPorts = await invoke<ContainerPort[]>("list_container_ports");
+    } catch {
+      containerPorts = [];
+    }
+  }
+
+  /** Forwarder processes own their ports on behalf of a container. */
+  const FORWARDER_NAMES = [
+    "docker-proxy",
+    "com.docker.backend",
+    "vpnkit",
+    "wslrelay",
+    "podman",
+  ];
+
+  /** Published-port map, keyed for the row snippets — reading it there
+   * (instead of through a function) keeps the tags reactive to the late
+   * docker ps reply. */
+  $: containerPortMap = (() => {
+    const map = new Map<number, ContainerPort[]>();
+    for (const entry of containerPorts) {
+      const list = map.get(entry.port);
+      if (list) list.push(entry);
+      else map.set(entry.port, [entry]);
+    }
+    return map;
+  })();
+
+  /** The container behind a forwarder-bound connection, or null. */
+  function containerOf(
+    connection: PortConnection,
+    map: Map<number, ContainerPort[]>,
+  ): ContainerPort | null {
+    const name = normalizedProcessName(connection.pid);
+    if (!name) return null;
+    if (!FORWARDER_NAMES.some((f) => name === f || name.startsWith(f))) {
+      return null;
+    }
+    const entries = map.get(connection.local_port);
+    if (!entries) return null;
+    return (
+      entries.find(
+        (entry) =>
+          entry.host_ip === "0.0.0.0" ||
+          entry.host_ip === "::" ||
+          entry.host_ip === connection.local_addr,
+      ) ??
+      entries[0] ??
+      null
+    );
+  }
+
+  /** User port labels (port-killer style) -------------------------------- */
   // Free-text names per local port number, persisted in the behavior
   // config; shown next to the address, on watched chips and in watch
   // toasts — the fallback for listeners no probe can identify.
@@ -1104,6 +1169,7 @@
   // Reload every time the modal is opened
   $: if (show) {
     loadConnections();
+    loadContainerPorts();
   }
 
   // Auto-refresh while the modal is open, mirroring the main table: same
@@ -2319,10 +2385,16 @@
         {@const category = categoryOf(connection)}
         {@const role = portRoleOf(connection)}
         {@const label = portLabelOf(connection.local_port)}
+        {@const container = containerOf(connection, containerPortMap)}
         <td class="mono">
           {connection.local_addr}:{connection.local_port}
           {#if label}
             <span class="port-label">{label}</span>
+          {/if}
+          {#if container}
+            <span class="container-tag" title={container.image}
+              >{container.container}</span
+            >
           {/if}
           {#if category}
             <span class="port-cat cat-{category}"
@@ -2539,6 +2611,30 @@
                         >{$t(bindScopeOf(detailConnection))}</span
                       >
                     </div>
+                  {/if}
+                  {#if detailConnection}
+                    {@const containerEntry = containerOf(
+                      detailConnection,
+                      containerPortMap,
+                    )}
+                    {#if containerEntry}
+                      <div class="fact">
+                        <span class="fact-label">{$t("ports.fContainer")}</span>
+                        <span class="fact-value">
+                          {containerEntry.container}
+                          {#if containerEntry.image}
+                            <span class="fact-image"
+                              >{containerEntry.image}</span
+                            >
+                          {/if}
+                          {#if containerEntry.target_port > 0}
+                            <span class="fact-pid mono"
+                              >{containerEntry.port}→{containerEntry.target_port}</span
+                            >
+                          {/if}
+                        </span>
+                      </div>
+                    {/if}
                   {/if}
                   {#if detailServices.length > 0}
                     <div class="fact">
@@ -3894,6 +3990,12 @@
     color: var(--subtext0);
   }
 
+  .fact-image {
+    font-family: monospace;
+    font-size: 11px;
+    color: var(--subtext0);
+  }
+
   .detail-command {
     padding: 8px 10px;
     font-family: monospace;
@@ -4117,6 +4219,19 @@
     white-space: nowrap;
     color: var(--mauve);
     background: color-mix(in srgb, var(--mauve) 14%, transparent);
+    border-radius: 4px;
+  }
+
+  /* Container behind a forwarder-bound port: teal chip, the same
+     accent family witr uses for container attribution */
+  .container-tag {
+    margin-left: 6px;
+    padding: 1px 6px;
+    font-family: inherit;
+    font-size: 10px;
+    white-space: nowrap;
+    color: var(--teal);
+    background: color-mix(in srgb, var(--teal) 14%, transparent);
     border-radius: 4px;
   }
 

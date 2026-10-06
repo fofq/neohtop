@@ -168,6 +168,23 @@ export interface PortConnection {
   bytes_received: number;
 }
 
+/** One published container port mapped back to its container
+ * (container_ports.rs, witr-style). */
+export interface ContainerPort {
+  /** Host IP the port is published on ("0.0.0.0", "127.0.0.1", "::"). */
+  host_ip: string;
+  /** Published (host-side) port. */
+  port: number;
+  /** Container-side port the published port forwards to. */
+  target_port: number;
+  /** Container name. */
+  container: string;
+  /** Image the container runs. */
+  image: string;
+  /** Engine the entry came from ("docker" | "podman"). */
+  engine: string;
+}
+
 /** What an HTTP-speaking listener revealed about itself (port probe). */
 export interface HttpProbe {
   /** Status code of the `HEAD /` response. */

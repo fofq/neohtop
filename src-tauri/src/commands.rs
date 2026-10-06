@@ -5,11 +5,11 @@
 //! the frontend and the system monitoring functionality.
 
 use crate::monitoring::{
-    AppWindow, DriverInfo, FileLocker, KillTreeResult, ModuleInfo, PortConnection, PortProbe,
-    ProcessInfo, ProcessMetadata, ProcessMonitor, ProcessPriorityInfo, ServiceInfo, StartupItem,
-    SystemStats, TrafficCounters, collect_network_ports, file_lockers, listening_ports,
-    network_ports, port_probe, process_control, process_inspection, services, startup_items,
-    tcp_control, window_list,
+    AppWindow, ContainerPort, DriverInfo, FileLocker, KillTreeResult, ModuleInfo, PortConnection,
+    PortProbe, ProcessInfo, ProcessMetadata, ProcessMonitor, ProcessPriorityInfo, ServiceInfo,
+    StartupItem, SystemStats, TrafficCounters, collect_network_ports, container_ports,
+    file_lockers, listening_ports, network_ports, port_probe, process_control,
+    process_inspection, services, startup_items, tcp_control, window_list,
 };
 use crate::state::AppState;
 use tauri::State;
@@ -234,6 +234,21 @@ pub async fn get_network_ports() -> Result<Vec<PortConnection>, String> {
     tauri::async_runtime::spawn_blocking(collect_network_ports)
         .await
         .map_err(|e| format!("Failed to collect network ports: {}", e))?
+}
+
+/// Maps published container ports back to their containers
+///
+/// Parses `docker ps` / `podman ps` for HOST:PORT->TARGET entries. Both
+/// engines are optional: a missing CLI, a stopped engine or any spawn
+/// failure yields an empty list — attribution is best effort and never
+/// surfaces an error to the ports modal.
+#[tauri::command]
+pub async fn list_container_ports() -> Result<Vec<ContainerPort>, String> {
+    // Module path required: the command's own name shadows the re-exported
+    // function inside this body (same collision process_control has)
+    tauri::async_runtime::spawn_blocking(|| container_ports::list())
+        .await
+        .map_err(|e| format!("Failed to collect container ports: {}", e))?
 }
 
 /// Lists the local TCP ports that currently have a process listening
