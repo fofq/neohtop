@@ -271,6 +271,7 @@ const en = {
   "ports.siblings": "Siblings ({count})",
   "ports.chainLabel": "Process ancestry",
   "ports.chainBroken": "Parent exited or not visible",
+  "ports.chainAncient": "Earlier ancestors have exited",
   "ports.fUser": "User",
   "ports.fStartTime": "Start Time",
   "ports.fMemory": "Memory",

@@ -268,6 +268,7 @@ const zhCN: Record<TranslationKey, string> = {
   "ports.siblings": "同级进程 ({count})",
   "ports.chainLabel": "因果链",
   "ports.chainBroken": "父进程已退出或不可见",
+  "ports.chainAncient": "更早的祖先进程已退出",
   "ports.fUser": "用户",
   "ports.fStartTime": "启动时间",
   "ports.fMemory": "内存",

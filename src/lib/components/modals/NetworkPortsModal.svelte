@@ -640,7 +640,7 @@
   function buildAncestryChain(
     process: Process,
     processes: Process[],
-  ): { segments: ChainSegment[]; broken: boolean } {
+  ): { segments: ChainSegment[]; broken: boolean; orphaned: boolean } {
     const byPid = new Map(processes.map((entry) => [entry.pid, entry]));
     const segments: ChainSegment[] = [
       {
@@ -670,7 +670,11 @@
       });
       current = parent;
     }
-    return { segments, broken };
+    // A missing DIRECT parent is the interesting case (nothing vouches for
+    // the process); a missing grandparent-and-beyond is the Windows norm —
+    // short-lived launchers (userinit, smss) exit right after spawning,
+    // so nearly every GUI/service chain breaks somewhere up top.
+    return { segments, broken, orphaned: broken && segments.length === 1 };
   }
 
   // Warnings follow witr: security-relevant facts first (red), resource
@@ -1889,7 +1893,12 @@
   }
 </script>
 
-<Modal {show} title={$t("ports.title")} maxWidth="1020px" {onClose}>
+<Modal
+  {show}
+  title={$t("ports.title")}
+  maxWidth="min(1440px, calc(100vw - 48px))"
+  {onClose}
+>
   <div class="ports-content">
     <div class="ports-toolbar">
       <input
@@ -2313,9 +2322,13 @@
                         </span>
                       {/each}
                       {#if detailChain.broken}
-                        <span class="chain-broken"
-                          >{$t("ports.chainBroken")}</span
-                        >
+                        <span class="chain-broken">
+                          {$t(
+                            detailChain.orphaned
+                              ? "ports.chainBroken"
+                              : "ports.chainAncient",
+                          )}
+                        </span>
                       {/if}
                     {:else}
                       <span class="chain-broken">{$t("ports.chainBroken")}</span
@@ -3836,7 +3849,10 @@
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    justify-content: flex-end;
+    /* Left-aligned on purpose: the table can scroll horizontally when it
+       outgrows the modal, and right-aligned buttons would sit at the far
+       edge of the scroll width — off-screen until you scroll. */
+    justify-content: flex-start;
   }
 
   .detail-actions .btn-secondary,
