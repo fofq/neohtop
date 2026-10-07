@@ -56,6 +56,27 @@
     }
   }
 
+  // The SCM state/start-type strings are machine enumerations
+  // ("running"/"auto"), not prose — translate them like every other
+  // enumerated value and fall back to the raw token for unknown values
+  function serviceStatusLabel(
+    status: string,
+    translate: (key: string) => string,
+  ): string {
+    const key = `services.status.${status.toLowerCase()}`;
+    const label = translate(key);
+    return label === key ? status : label;
+  }
+
+  function serviceStartTypeLabel(
+    startType: string,
+    translate: (key: string) => string,
+  ): string {
+    const key = `services.startType.${startType.toLowerCase()}`;
+    const label = translate(key);
+    return label === key ? startType : label;
+  }
+
   function actionIcon(action: "start" | "stop") {
     return action === "start" ? faPlay : faStop;
   }
@@ -160,10 +181,12 @@
                 <td>{service.display_name}</td>
                 <td>
                   <span class="status-badge {statusClass(service.status)}">
-                    {service.status}
+                    {serviceStatusLabel(service.status, $t)}
                   </span>
                 </td>
-                <td class="mono">{service.start_type}</td>
+                <td class="mono">
+                  {serviceStartTypeLabel(service.start_type, $t)}
+                </td>
                 <td class="actions-col">
                   {#if service.status === "running"}
                     <button
@@ -218,8 +241,8 @@
       <div class="service-info">
         <span class="service-name">{confirmAction.service.name}</span>
         <span class="service-status"
-          >{confirmAction.service.status} ·
-          {confirmAction.service.start_type}</span
+          >{serviceStatusLabel(confirmAction.service.status, $t)} ·
+          {serviceStartTypeLabel(confirmAction.service.start_type, $t)}</span
         >
       </div>
       <div class="confirm-actions">

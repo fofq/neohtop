@@ -209,6 +209,27 @@
     }
   }
 
+  // The SCM state/start-type strings are machine enumerations
+  // ("running"/"auto"), not prose — translate them like every other
+  // enumerated value and fall back to the raw token for unknown values
+  function serviceStatusLabel(
+    status: string,
+    translate: (key: string) => string,
+  ): string {
+    const key = `services.status.${status.toLowerCase()}`;
+    const label = translate(key);
+    return label === key ? status : label;
+  }
+
+  function serviceStartTypeLabel(
+    startType: string,
+    translate: (key: string) => string,
+  ): string {
+    const key = `services.startType.${startType.toLowerCase()}`;
+    const label = translate(key);
+    return label === key ? startType : label;
+  }
+
   // The detail jump closes this panel first: the details modal stacks
   // below it (both z-index 1000, DOM order decides)
   function showDetails(pid: number) {
@@ -339,16 +360,14 @@
           class="services-refresh"
           on:click={() => loadServices()}
           disabled={isLoading}
+          title={$t("services.refreshAria")}
           aria-label={$t("services.refreshAria")}
         >
-          <span class="refresh-icon">
-            {#if isLoading}
-              <span class="spinner"></span>
-            {:else}
-              <Fa icon={faRefresh} />
-            {/if}
-          </span>
-          <span class="refresh-label">{$t("services.refresh")}</span>
+          {#if isLoading}
+            <span class="spinner"></span>
+          {:else}
+            <Fa icon={faRefresh} />
+          {/if}
         </button>
       </div>
 
@@ -476,10 +495,12 @@
                     <td class="display-name">{service.display_name}</td>
                     <td>
                       <span class="status-badge {statusClass(service.status)}"
-                        >{service.status}</span
+                        >{serviceStatusLabel(service.status, $t)}</span
                       >
                     </td>
-                    <td class="mono">{service.start_type}</td>
+                    <td class="mono"
+                      >{serviceStartTypeLabel(service.start_type, $t)}</td
+                    >
                     <td class="mono pid-cell">
                       {#if service.pid !== 0 && processByPid.has(service.pid)}
                         <button
@@ -550,10 +571,12 @@
                         <td>
                           <span
                             class="status-badge {statusClass(service.status)}"
-                            >{service.status}</span
+                            >{serviceStatusLabel(service.status, $t)}</span
                           >
                         </td>
-                        <td class="mono">{service.start_type}</td>
+                        <td class="mono"
+                          >{serviceStartTypeLabel(service.start_type, $t)}</td
+                        >
                         <td class="mono">
                           {service.pid || "-"}
                         </td>
@@ -606,8 +629,8 @@
       <div class="service-info">
         <span class="service-name">{confirmAction.service.name}</span>
         <span class="service-status"
-          >{confirmAction.service.status} · {confirmAction.service
-            .start_type}</span
+          >{serviceStatusLabel(confirmAction.service.status, $t)} ·
+          {serviceStartTypeLabel(confirmAction.service.start_type, $t)}</span
         >
       </div>
       {#if controlError}
@@ -697,40 +720,31 @@
     font-size: 11px;
   }
 
+  /* Icon-only refresh, aligned with the ports panel's toolbar buttons */
   .services-refresh {
     display: inline-flex;
-    gap: 6px;
     align-items: center;
     justify-content: center;
-    min-width: 92px;
+    width: 32px;
     height: 28px;
-    padding: 0 12px;
+    padding: 0;
     font-size: 12px;
-    color: var(--text);
+    color: var(--subtext0);
     background: var(--surface0);
     border: 1px solid var(--surface1);
     border-radius: 6px;
     cursor: pointer;
     transition: all 0.2s ease;
-    white-space: nowrap;
   }
 
   .services-refresh:hover:not(:disabled) {
+    color: var(--text);
     background: var(--surface1);
   }
 
   .services-refresh:disabled {
     opacity: 0.7;
     cursor: not-allowed;
-  }
-
-  .refresh-icon {
-    display: inline-flex;
-    flex-shrink: 0;
-    align-items: center;
-    justify-content: center;
-    width: 16px;
-    height: 16px;
   }
 
   .services-refresh :global(svg) {

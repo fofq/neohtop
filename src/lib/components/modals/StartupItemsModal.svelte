@@ -6,6 +6,7 @@
     faFolderOpen,
     faGears,
     faGlobe,
+    faRefresh,
     faRocket,
     faShieldHalved,
     faTrash,
@@ -135,8 +136,11 @@
       return path.startsWith("microsoft");
     }
     const binary = item.command.toLowerCase();
+    // "c:\\windows" in source = the literal "c:\windows" — a backslashless
+    // "c:windows" would never match a real path and the filter leaked
+    // binaries that live directly under C:\Windows
     return (
-      binary.includes("c:windows") ||
+      binary.includes("c:\\windows") ||
       binary.includes("system32") ||
       binary.includes("systemroot")
     );
@@ -246,6 +250,19 @@
         title={$t("startup.hideSystem")}
       >
         {$t("startup.hideSystem")}
+      </button>
+      <button
+        class="startup-refresh"
+        on:click={load}
+        disabled={isLoading}
+        title={$t("startup.refreshAria")}
+        aria-label={$t("startup.refreshAria")}
+      >
+        {#if isLoading}
+          <span class="spinner"></span>
+        {:else}
+          <Fa icon={faRefresh} />
+        {/if}
       </button>
     </div>
 
@@ -487,6 +504,33 @@
      sized to the input so the row reads as one control strip. */
   .toolbar-chip {
     height: 28px;
+  }
+
+  /* Icon-only refresh, aligned with the ports panel's toolbar buttons */
+  .startup-refresh {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 28px;
+    padding: 0;
+    font-size: 12px;
+    color: var(--subtext0);
+    background: var(--surface0);
+    border: 1px solid var(--surface1);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .startup-refresh:hover:not(:disabled) {
+    color: var(--text);
+    background: var(--surface1);
+  }
+
+  .startup-refresh:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
   }
 
   /* Labeled chip groups, mirroring the ports modal's filter row */

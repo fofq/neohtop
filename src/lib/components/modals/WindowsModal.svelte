@@ -136,16 +136,14 @@
           class="windows-refresh"
           on:click={() => loadWindows()}
           disabled={isLoading}
+          title={$t("windows.refreshAria")}
           aria-label={$t("windows.refreshAria")}
         >
-          <span class="refresh-icon">
-            {#if isLoading}
-              <span class="spinner"></span>
-            {:else}
-              <Fa icon={faRefresh} />
-            {/if}
-          </span>
-          <span class="refresh-label">{$t("windows.refresh")}</span>
+          {#if isLoading}
+            <span class="spinner"></span>
+          {:else}
+            <Fa icon={faRefresh} />
+          {/if}
         </button>
       </div>
 
@@ -303,40 +301,31 @@
     min-width: 0;
   }
 
+  /* Icon-only refresh, aligned with the ports panel's toolbar buttons */
   .windows-refresh {
     display: inline-flex;
-    gap: 6px;
     align-items: center;
     justify-content: center;
-    min-width: 92px;
+    width: 32px;
     height: 28px;
-    padding: 0 12px;
+    padding: 0;
     font-size: 12px;
-    color: var(--text);
+    color: var(--subtext0);
     background: var(--surface0);
     border: 1px solid var(--surface1);
     border-radius: 6px;
     cursor: pointer;
     transition: all 0.2s ease;
-    white-space: nowrap;
   }
 
   .windows-refresh:hover:not(:disabled) {
+    color: var(--text);
     background: var(--surface1);
   }
 
   .windows-refresh:disabled {
     opacity: 0.7;
     cursor: not-allowed;
-  }
-
-  .refresh-icon {
-    display: inline-flex;
-    flex-shrink: 0;
-    align-items: center;
-    justify-content: center;
-    width: 16px;
-    height: 16px;
   }
 
   .windows-refresh :global(svg) {
