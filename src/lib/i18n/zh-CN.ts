@@ -429,9 +429,12 @@ const zhCN: Record<TranslationKey, string> = {
   "windows.pid": "PID",
   "windows.state": "状态",
   "windows.stateVisible": "可见",
+
   "windows.stateMinimized": "已最小化",
   "windows.stateHidden": "已隐藏",
   "windows.showWindow": "显示窗口",
+  "windows.topmost": "窗口置顶",
+  "windows.untopmost": "取消置顶",
   "windows.minimize": "最小化",
   "windows.restore": "还原",
   "windows.hide": "隐藏",

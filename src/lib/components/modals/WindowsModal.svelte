@@ -6,6 +6,7 @@
     faCrosshairs,
     faEyeSlash,
     faRefresh,
+    faThumbtack,
     faUpRightFromSquare,
     faWindowMinimize,
     faWindowRestore,
@@ -316,6 +317,28 @@
                     {/if}
                     <button
                       class="row-action"
+                      class:active={window.is_topmost}
+                      disabled={showingId === window.id}
+                      on:click={() =>
+                        controlWindow(
+                          window,
+                          window.is_topmost ? "untopmost" : "topmost",
+                        )}
+                      title={$t(
+                        window.is_topmost
+                          ? "windows.untopmost"
+                          : "windows.topmost",
+                      )}
+                      aria-label={$t(
+                        window.is_topmost
+                          ? "windows.untopmost"
+                          : "windows.topmost",
+                      )}
+                    >
+                      <Fa icon={faThumbtack} />
+                    </button>
+                    <button
+                      class="row-action"
                       disabled={!processByPid.has(window.pid)}
                       on:click={() => showDetails(window.pid)}
                       title={processByPid.has(window.pid)
@@ -458,9 +481,14 @@
   }
 
   .actions-col {
-    width: 64px;
+    width: 96px;
     text-align: center;
     white-space: nowrap;
+  }
+
+  .row-action.active {
+    color: var(--blue);
+    border-color: color-mix(in srgb, var(--blue) 45%, transparent);
   }
 
   tbody td {

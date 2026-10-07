@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { platform } from "@tauri-apps/plugin-os";
   import Fa from "svelte-fa";
@@ -35,6 +36,33 @@
   // Resolve PIDs against the current process snapshot so rows can jump to
   // the regular process details modal
   $: processByPid = new Map($processStore.processes.map((p) => [p.pid, p]));
+
+  // The file may get released while the panel is open: re-run the same
+  // query every 10s so rows drop out as they free up
+  let autoTimer: ReturnType<typeof setInterval> | null = null;
+
+  $: if (lastQuery) {
+    startAutoRequery();
+  } else {
+    stopAutoRequery();
+  }
+
+  function startAutoRequery() {
+    if (autoTimer !== null) return;
+    autoTimer = setInterval(() => {
+      if (!show || isLoading) return;
+      findLockers();
+    }, 10000);
+  }
+
+  function stopAutoRequery() {
+    if (autoTimer !== null) {
+      clearInterval(autoTimer);
+      autoTimer = null;
+    }
+  }
+
+  onDestroy(stopAutoRequery);
 
   async function findLockers() {
     const query = path.trim();

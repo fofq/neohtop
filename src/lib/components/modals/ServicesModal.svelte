@@ -231,6 +231,13 @@
     return label === key ? startType : label;
   }
 
+  /** Only auto/manual/disabled carry an editor; boot/system are
+   * kernel-managed and unknown means the query failed — those render as
+   * plain text (a select whose value matches no option shows up BLANK). */
+  function isSettableStartType(value: string): boolean {
+    return SETTABLE_START_TYPES.some((t) => t === value);
+  }
+
   // The detail jump closes this panel first: the details modal stacks
   // below it (both z-index 1000, DOM order decides)
   function showDetails(pid: number) {
@@ -555,22 +562,26 @@
                       >
                     </td>
                     <td class="mono">
-                      <select
-                        class="start-type-select"
-                        value={service.start_type}
-                        disabled={isControlling}
-                        on:change={(event) =>
-                          askStartTypeChange(
-                            service,
-                            event.currentTarget.value,
-                          )}
-                      >
-                        {#each SETTABLE_START_TYPES as startType (startType)}
-                          <option value={startType}
-                            >{serviceStartTypeLabel(startType, $t)}</option
-                          >
-                        {/each}
-                      </select>
+                      {#if isSettableStartType(service.start_type)}
+                        <select
+                          class="start-type-select"
+                          value={service.start_type}
+                          disabled={isControlling}
+                          on:change={(event) =>
+                            askStartTypeChange(
+                              service,
+                              event.currentTarget.value,
+                            )}
+                        >
+                          {#each SETTABLE_START_TYPES as startType (startType)}
+                            <option value={startType}
+                              >{serviceStartTypeLabel(startType, $t)}</option
+                            >
+                          {/each}
+                        </select>
+                      {:else}
+                        {serviceStartTypeLabel(service.start_type, $t)}
+                      {/if}
                     </td>
                     <td class="mono pid-cell">
                       {#if service.pid !== 0 && processByPid.has(service.pid)}
@@ -646,22 +657,29 @@
                           >
                         </td>
                         <td class="mono">
-                          <select
-                            class="start-type-select"
-                            value={service.start_type}
-                            disabled={isControlling}
-                            on:change={(event) =>
-                              askStartTypeChange(
-                                service,
-                                event.currentTarget.value,
-                              )}
-                          >
-                            {#each SETTABLE_START_TYPES as startType (startType)}
-                              <option value={startType}
-                                >{serviceStartTypeLabel(startType, $t)}</option
-                              >
-                            {/each}
-                          </select>
+                          {#if isSettableStartType(service.start_type)}
+                            <select
+                              class="start-type-select"
+                              value={service.start_type}
+                              disabled={isControlling}
+                              on:change={(event) =>
+                                askStartTypeChange(
+                                  service,
+                                  event.currentTarget.value,
+                                )}
+                            >
+                              {#each SETTABLE_START_TYPES as startType (startType)}
+                                <option value={startType}
+                                  >{serviceStartTypeLabel(
+                                    startType,
+                                    $t,
+                                  )}</option
+                                >
+                              {/each}
+                            </select>
+                          {:else}
+                            {serviceStartTypeLabel(service.start_type, $t)}
+                          {/if}
                         </td>
                         <td class="mono">
                           {service.pid || "-"}

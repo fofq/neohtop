@@ -277,6 +277,8 @@ export interface AppWindow {
   process_name: string;
   is_visible: boolean;
   is_minimized: boolean;
+  /** WS_EX_TOPMOST style bit (always-on-top). */
+  is_topmost: boolean;
 }
 
 /** Version-resource metadata and elevation of one process. */

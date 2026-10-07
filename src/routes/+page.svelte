@@ -168,7 +168,12 @@
     cachedSortedProcesses = cachedFilteredProcesses;
   }
 
-  $: totalPages = Math.ceil(cachedFilteredProcesses.length / itemsPerPage);
+  // Floor at 1: an empty filtered list would otherwise render the sick
+  // "page 1 / 0" indicator (and the pager buttons still no-op at 1/1)
+  $: totalPages = Math.max(
+    1,
+    Math.ceil(cachedFilteredProcesses.length / itemsPerPage),
+  );
   $: paginatedProcesses = cachedSortedProcesses.slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage,

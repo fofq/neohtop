@@ -25,6 +25,8 @@ pub struct AppWindow {
     pub is_visible: bool,
     /// Whether the window is currently minimized
     pub is_minimized: bool,
+    /// Whether the window carries the WS_EX_TOPMOST style
+    pub is_topmost: bool,
 }
 
 /// Returns the session's top-level windows, hidden and minimized included
@@ -60,9 +62,10 @@ mod platform {
         OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetWindowThreadProcessId, GetWindowTextLengthW, GetWindowTextW, IsIconic,
-        IsWindow, IsWindowVisible, SetForegroundWindow, ShowWindow, SW_HIDE, SW_MINIMIZE,
-        SW_RESTORE, SW_SHOW,
+        EnumWindows, GetWindowLongW, GetWindowThreadProcessId, GetWindowTextLengthW,
+        GetWindowTextW, GWL_EXSTYLE, IsIconic, IsWindow, IsWindowVisible, SetForegroundWindow,
+        SetWindowPos, ShowWindow, SW_HIDE, SW_MINIMIZE, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+        SW_RESTORE, SW_SHOW, HWND_NOTOPMOST, HWND_TOPMOST, WS_EX_TOPMOST,
     };
 
     /// State threaded through `EnumWindows`' LPARAM
@@ -109,6 +112,10 @@ mod platform {
             }
             let title = read_title(hwnd);
             let (process_name, pid) = read_owner(hwnd);
+            // SAFETY: hwnd is a live window handle (validated by IsWindow);
+            // GWL_EXSTYLE only reads the extended-style bits
+            let is_topmost =
+                unsafe { GetWindowLongW(hwnd, GWL_EXSTYLE) } & WS_EX_TOPMOST as i32 != 0;
             windows.push(AppWindow {
                 id,
                 title,
@@ -116,6 +123,7 @@ mod platform {
                 process_name,
                 is_visible: unsafe { IsWindowVisible(hwnd) } != 0,
                 is_minimized: unsafe { IsIconic(hwnd) } != 0,
+                is_topmost,
             });
         }
         Ok(windows)
@@ -196,6 +204,33 @@ mod platform {
     }
 
     pub fn control(id: isize, action: &str) -> Result<bool, String> {
+        if action == "topmost" || action == "untopmost" {
+            // SAFETY: id comes from a previous list_windows call; IsWindow
+            // validates the handle before any further use
+            let hwnd = id as HWND;
+            if unsafe { IsWindow(hwnd) } == 0 {
+                return Err(format!("No window with handle {} exists anymore", id));
+            }
+            let insert_after = if action == "topmost" {
+                HWND_TOPMOST
+            } else {
+                HWND_NOTOPMOST
+            };
+            // SAFETY: hwnd is a validated live window handle; the flags
+            // keep position and size, and NOACTIVATE avoids stealing focus
+            unsafe {
+                SetWindowPos(
+                    hwnd,
+                    insert_after,
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE,
+                )
+            };
+            return Ok(true);
+        }
         let command = match action {
             "show" => SW_SHOW,
             "hide" => SW_HIDE,
@@ -203,7 +238,7 @@ mod platform {
             "restore" => SW_RESTORE,
             _ => {
                 return Err(format!(
-                    "Unknown window action '{}': expected show, hide, minimize or restore",
+                    "Unknown window action '{}': expected show, hide, minimize, restore, topmost or untopmost",
                     action
                 ))
             }

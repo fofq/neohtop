@@ -437,9 +437,12 @@ const en = {
   "windows.pid": "PID",
   "windows.state": "State",
   "windows.stateVisible": "Visible",
+
   "windows.stateMinimized": "Minimized",
   "windows.stateHidden": "Hidden",
   "windows.showWindow": "Show window",
+  "windows.topmost": "Pin on top",
+  "windows.untopmost": "Unpin",
   "windows.minimize": "Minimize",
   "windows.restore": "Restore",
   "windows.hide": "Hide",
