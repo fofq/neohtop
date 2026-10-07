@@ -29,12 +29,14 @@
     faStar,
     faTriangleExclamation,
     faUpRightFromSquare,
+    faWaveSquare,
     faXmark,
     faPen,
   } from "@fortawesome/free-solid-svg-icons";
   import { backToTop } from "$lib/actions/backToTop";
   import { Modal } from "$lib/components";
   import { t } from "$lib/i18n";
+  import { platform } from "@tauri-apps/plugin-os";
   import {
     processStore,
     settingsStore,
@@ -687,8 +689,9 @@
 
   // Kill confirmation, mirroring the close-connection confirmation flow;
   // the message names the exact process and PID to avoid killing a
-  // look-alike instance
-  let processToKill: { pid: number; name: string } | null = null;
+  // look-alike instance. deep=true switches the confirm to the
+  // kill-and-disconnect flow (close established connections first).
+  let processToKill: { pid: number; name: string; deep: boolean } | null = null;
   let isKillingProcess = false;
   let killError: string | null = null;
 
@@ -892,14 +895,32 @@
   // A kill can only be offered for a process the current snapshot knows:
   // synthetic "-" nodes (PID absent from the snapshot) must not expose the
   // entry, and a PID that already left the snapshot must not be confirmed
-  // against a stale name (the PID may have been reused by now)
+  // against a stale name (the PID may have been reused by now). Kernel
+  // pseudo-processes never qualify: PID 0 (System Idle) shows up in the
+  // connection table through other processes' TIME_WAIT entries, and on
+  // Windows PID 4 (System) owns no user-killable identity either.
+  const isWindowsPlatform = platform() === "windows";
+
+  function isProtectedPid(pid: number): boolean {
+    return pid === 0 || (isWindowsPlatform && pid === 4);
+  }
+
   function canKillProcess(pid: number): boolean {
-    return pid > 0 && processNameByPid.has(pid);
+    return !isProtectedPid(pid) && processNameByPid.has(pid);
   }
 
   function confirmKillProcess(pid: number, name: string) {
     if (!canKillProcess(pid)) return;
-    processToKill = { pid, name };
+    processToKill = { pid, name, deep: false };
+    killError = null;
+  }
+
+  /** Deep kill: close the process's established TCP connections first,
+   * then kill it (port-killer #100). Same confirmation flow, different
+   * message and backend command. */
+  function confirmDeepKillProcess(pid: number, name: string) {
+    if (!canKillProcess(pid)) return;
+    processToKill = { pid, name, deep: true };
     killError = null;
   }
 
@@ -914,11 +935,22 @@
     isKillingProcess = true;
     killError = null;
     try {
-      const success = await invoke<boolean>("kill_process", {
-        pid: target.pid,
-      });
-      if (!success) {
-        throw new Error("Failed to kill process");
+      if (target.deep) {
+        const report = await invoke<{
+          attempted: number;
+          closed: number;
+          killed: boolean;
+        }>("deep_kill_process", { pid: target.pid });
+        if (!report.killed) {
+          throw new Error("Failed to kill process");
+        }
+      } else {
+        const success = await invoke<boolean>("kill_process", {
+          pid: target.pid,
+        });
+        if (!success) {
+          throw new Error("Failed to kill process");
+        }
       }
       processToKill = null;
       // Refresh so the dead process's connections disappear from the list
@@ -1560,6 +1592,43 @@
     reportCopied = true;
     if (reportCopiedTimer) clearTimeout(reportCopiedTimer);
     reportCopiedTimer = setTimeout(() => (reportCopied = false), 1600);
+  }
+
+  // --- Connection diagnostics (ping the remote endpoint) -------------------
+  // The dialog freezes the host it was opened with, so snapshot refreshes
+  // can't redirect a run at a different target mid-flight.
+  let diagOpen = false;
+  let diagHost = "";
+  let diagRunning = false;
+  let diagOutput: string | null = null;
+  let diagError: string | null = null;
+
+  function openDiag(connection: PortConnection) {
+    if (!connection.remote_addr) return;
+    diagHost = connection.remote_addr;
+    diagOpen = true;
+    diagOutput = null;
+    diagError = null;
+    runDiag();
+  }
+
+  function closeDiag() {
+    if (diagRunning) return; // a running ping keeps its dialog open
+    diagOpen = false;
+  }
+
+  async function runDiag() {
+    if (diagRunning || !diagHost) return;
+    diagRunning = true;
+    diagError = null;
+    diagOutput = null;
+    try {
+      diagOutput = await invoke<string>("ping_host", { host: diagHost });
+    } catch (e) {
+      diagError = e instanceof Error ? e.message : String(e);
+    } finally {
+      diagRunning = false;
+    }
   }
 
   function filterConnections(
@@ -2696,7 +2765,9 @@
                   </div>
                   <div class="fact">
                     <span class="fact-label">{$t("ports.state")}</span>
-                    <span class="fact-value mono">{connection.state}</span>
+                    <span class="fact-value mono" title={connection.state}>
+                      {localizedState(connection.state, $t)}
+                    </span>
                   </div>
                   {#if connection.bytes_sent > 0 || connection.bytes_received > 0}
                     <div class="fact">
@@ -2733,9 +2804,11 @@
                   <div class="fact">
                     <span class="fact-label">{$t("ports.fStartTime")}</span>
                     <span class="fact-value"
-                      >{detailProcess
-                        ? formatDate(detailProcess.start_time)
-                        : "-"}</span
+                      >{#if detailProcess && detailProcess.start_time > 0}
+                        {formatDate(detailProcess.start_time)}
+                      {:else}
+                        -
+                      {/if}</span
                     >
                   </div>
                   <div class="fact">
@@ -2749,9 +2822,11 @@
                   <div class="fact">
                     <span class="fact-label">{$t("ports.fRunTime")}</span>
                     <span class="fact-value"
-                      >{detailProcess
-                        ? formatUptime(detailProcess.run_time)
-                        : "-"}</span
+                      >{#if detailProcess && detailProcess.start_time > 0}
+                        {formatUptime(detailProcess.run_time)}
+                      {:else}
+                        -
+                      {/if}</span
                     >
                   </div>
                   <div class="fact">
@@ -2996,14 +3071,27 @@
                       class="btn-danger"
                       on:click={() =>
                         confirmKillProcess(process.pid, process.name)}
+                      disabled={!canKillProcess(process.pid)}
                     >
                       <Fa icon={faBan} />
                       <span>{$t("ports.killProcess")}</span>
                     </button>
+                    {#if canKillProcess(process.pid)}
+                      <button
+                        class="btn-secondary deep-kill"
+                        on:click={() =>
+                          confirmDeepKillProcess(process.pid, process.name)}
+                      >
+                        <Fa icon={faBan} />
+                        <span>{$t("ports.deepKill")}</span>
+                      </button>
+                    {/if}
                     <button
                       class="btn-secondary"
                       on:click={toggleDetailSuspend}
-                      disabled={isTogglingSuspend}
+                      disabled={!detailProcess ||
+                        isProtectedPid(detailProcess.pid) ||
+                        isTogglingSuspend}
                     >
                       <Fa icon={detailSuspended ? faPlay : faPause} />
                       <span
@@ -3018,6 +3106,15 @@
                     >
                       <Fa icon={faCrosshairs} />
                       <span>{$t("ports.openDetails")}</span>
+                    </button>
+                  {/if}
+                  {#if detailConnection?.remote_addr}
+                    <button
+                      class="btn-secondary"
+                      on:click={() => openDiag(detailConnection)}
+                    >
+                      <Fa icon={faWaveSquare} />
+                      <span>{$t("ports.diag")}</span>
                     </button>
                   {/if}
                   {#if canCloseConnection(connection)}
@@ -3511,18 +3608,26 @@
 
 <Modal
   show={processToKill !== null}
-  title={$t("ports.killProcess")}
+  title={$t(processToKill?.deep ? "ports.deepKill" : "ports.killProcess")}
   maxWidth="420px"
   onClose={cancelKillProcess}
 >
   {#if processToKill}
     <div class="confirm-content">
       <p class="confirm-message">
-        {$t("ports.killMessage", {
-          name: processToKill.name,
-          pid: processToKill.pid,
-        })}
+        {$t(
+          processToKill.deep ? "ports.deepKillMessage" : "ports.killMessage",
+          {
+            name: processToKill.name,
+            pid: processToKill.pid,
+          },
+        )}
       </p>
+      {#if processToKill.deep && !$isElevated}
+        <p class="confirm-message deep-hint">
+          {$t("ports.deepKillHint")}
+        </p>
+      {/if}
       <div class="connection-info">
         <div class="connection-process">
           <span class="process-name">{processToKill.name}</span>
@@ -3551,12 +3656,52 @@
             <div class="spinner"></div>
             <span>{$t("kill.inProgress")}</span>
           {:else}
-            {$t("kill.confirm")}
+            {$t(processToKill.deep ? "ports.deepKillConfirm" : "kill.confirm")}
           {/if}
         </button>
       </div>
     </div>
   {/if}
+</Modal>
+
+<!-- Remote-endpoint diagnostics: run the platform ping against the
+     selected connection's remote address, raw output verbatim -->
+<Modal
+  show={diagOpen}
+  title={$t("ports.diagTitle")}
+  maxWidth="560px"
+  onClose={closeDiag}
+>
+  <div class="diag-content">
+    <div class="diag-target">
+      <span class="diag-label">{$t("ports.diagTarget")}</span>
+      <span class="diag-host mono">{diagHost}</span>
+    </div>
+    {#if diagError}
+      <div class="ports-error">{diagError}</div>
+    {/if}
+    {#if diagRunning}
+      <div class="diag-status">
+        <div class="spinner"></div>
+        <span>{$t("ports.diagRunning")}</span>
+      </div>
+    {:else if diagOutput !== null}
+      <pre class="diag-output">{diagOutput}</pre>
+    {/if}
+    <div class="confirm-actions">
+      <button class="btn-secondary" on:click={closeDiag} disabled={diagRunning}>
+        {$t("modal.cancel")}
+      </button>
+      <button class="btn-primary" on:click={runDiag} disabled={diagRunning}>
+        {#if diagRunning}
+          <div class="spinner"></div>
+          <span>{$t("ports.diagRunning")}</span>
+        {:else}
+          {$t("ports.diagRun")}
+        {/if}
+      </button>
+    </div>
+  </div>
 </Modal>
 
 <style>
@@ -4740,6 +4885,90 @@
 
   .btn-danger:hover {
     background: color-mix(in srgb, var(--red) 90%, white);
+  }
+
+  .btn-primary {
+    display: inline-flex;
+    gap: 8px;
+    align-items: center;
+    padding: 8px 16px;
+    font-size: 13px;
+    color: var(--base);
+    background: var(--blue);
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .btn-primary:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background: color-mix(in srgb, var(--blue) 90%, white);
+  }
+
+  .deep-hint {
+    font-size: 12px;
+    color: var(--yellow);
+  }
+
+  .deep-kill:hover:not(:disabled) {
+    color: var(--red);
+    border-color: color-mix(in srgb, var(--red) 45%, transparent);
+  }
+
+  /* Connection diagnostics dialog */
+  .diag-content {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .diag-target {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .diag-label {
+    font-size: 12px;
+    color: var(--subtext0);
+  }
+
+  .diag-host {
+    font-size: 13px;
+    color: var(--text);
+    word-break: break-all;
+  }
+
+  .diag-status {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px;
+    border-radius: 6px;
+    background: var(--mantle);
+    color: var(--subtext0);
+    font-size: 13px;
+  }
+
+  .diag-output {
+    margin: 0;
+    max-height: 320px;
+    overflow: auto;
+    padding: 12px;
+    border-radius: 6px;
+    background: var(--mantle);
+    color: var(--text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+      "Liberation Mono", "Courier New", monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    word-break: break-all;
   }
 
   .spinner {

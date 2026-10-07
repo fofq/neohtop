@@ -5,10 +5,10 @@
 //! the frontend and the system monitoring functionality.
 
 use crate::monitoring::{
-    AppWindow, ContainerPort, DriverInfo, FileLocker, KillTreeResult, ModuleInfo, PortConnection,
-    PortProbe, ProcessInfo, ProcessMetadata, ProcessMonitor, ProcessPriorityInfo, ServiceInfo,
-    StartupItem, SystemStats, TrafficCounters, collect_network_ports, container_ports,
-    file_lockers, listening_ports, network_ports, port_probe, process_control,
+    AppWindow, ContainerPort, DeepKillReport, DriverInfo, FileLocker, KillTreeResult, ModuleInfo,
+    PortConnection, PortProbe, ProcessInfo, ProcessMetadata, ProcessMonitor, ProcessPriorityInfo,
+    ServiceInfo, StartupItem, SystemStats, TrafficCounters, collect_network_ports, container_ports,
+    file_lockers, listening_ports, net_diag, network_ports, port_probe, process_control,
     process_inspection, services, startup_items, tcp_control, window_list,
 };
 use crate::state::AppState;
@@ -105,6 +105,49 @@ pub async fn kill_process_tree(
     // missing instead of being killed through a stale snapshot entry
     sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
     process_control::kill_tree(&sys, pid)
+}
+
+/// Deep-kills a process (port-killer style): closes the process's
+/// established IPv4 TCP connections first (best effort, elevation-gated,
+/// reported in the returned counts) and then kills the process itself.
+///
+/// # Arguments
+///
+/// * `pid` - Process ID to deep-kill; kernel pseudo-processes (0, 4 on
+///   Windows) are refused
+/// * `state` - The application state
+///
+/// # Returns
+///
+/// A [`DeepKillReport`] with the close-phase tally and the kill outcome
+#[tauri::command]
+pub async fn deep_kill_process(
+    pid: u32,
+    state: State<'_, AppState>,
+) -> Result<DeepKillReport, String> {
+    let sys = state.sys.lock().map_err(|e| e.to_string())?;
+    process_control::deep_kill(pid, &sys)
+}
+
+/// Pings a host a fixed number of times for the ports panel's connection
+/// diagnostics dialog
+///
+/// Runs the platform's own ping command (hidden window on Windows) and
+/// returns its raw output; the per-probe timeouts bound the runtime to a
+/// few seconds even for unreachable hosts.
+///
+/// # Arguments
+///
+/// * `host` - Host name or address to ping
+///
+/// # Returns
+///
+/// The raw ping output as text
+#[tauri::command]
+pub async fn ping_host(host: String) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || net_diag::ping(&host))
+        .await
+        .map_err(|e| format!("Failed to run ping: {}", e))?
 }
 
 /// Attempts to restart a process with the specified PID

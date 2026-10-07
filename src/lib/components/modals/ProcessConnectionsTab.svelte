@@ -68,6 +68,20 @@
     return `${addr}:${port}`;
   }
 
+  /** Localized label of a connection state: looks up `netState.<lowercased
+   * state>` and falls back to the raw backend string when no dictionary
+   * entry exists (UDP's "-", OS-specific values). The translator is passed
+   * in from the template so the cells re-render when the locale changes. */
+  function localizedState(
+    state: string,
+    translate: (key: string) => string,
+  ): string {
+    if (!state || state === "-") return state;
+    const key = `netState.${state.toLowerCase()}`;
+    const label = translate(key);
+    return label === key ? state : label;
+  }
+
   /** The 6-tuple is the only stable identity a connection has — snapshot
    * refreshes replace the row objects wholesale. */
   function connectionKey(connection: PortConnection): string {
@@ -145,7 +159,9 @@
               <td class="mono">
                 {address(connection.remote_addr, connection.remote_port)}
               </td>
-              <td class="mono">{connection.state}</td>
+              <td class="mono" title={connection.state}>
+                {localizedState(connection.state, $t)}
+              </td>
               {#if hasTraffic}
                 <td class="mono">
                   {connection.bytes_received > 0

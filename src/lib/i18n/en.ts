@@ -270,6 +270,17 @@ const en = {
   "ports.exportCsv": "Export CSV",
   "ports.copyJsonReport": "Copy JSON report",
   "ports.reportCopied": "Copied",
+  "ports.deepKill": "Kill & disconnect",
+  "ports.deepKillConfirm": "Kill & disconnect",
+  "ports.deepKillMessage":
+    "All established TCP connections of {name} (PID {pid}) will be closed first, then the process itself will be killed.",
+  "ports.deepKillHint":
+    "Without administrator privileges only the kill runs — the TCP disconnect step is skipped.",
+  "ports.diag": "Diagnostics",
+  "ports.diagTitle": "Connection diagnostics",
+  "ports.diagTarget": "Target",
+  "ports.diagRun": "Run again",
+  "ports.diagRunning": "Pinging…",
   "ports.groupByTree": "Group by process tree",
   "ports.collapseAll": "Collapse all",
   "ports.ownAndChildren": "{own} own · {children} from children",

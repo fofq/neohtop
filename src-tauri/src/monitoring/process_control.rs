@@ -151,6 +151,97 @@ pub fn kill_tree(sys: &sysinfo::System, pid: u32) -> Result<KillTreeResult, Stri
     })
 }
 
+/// Outcome of a deep kill: how many established TCP connections belonged to
+/// the target, how many the backend actually closed, and whether the kill
+/// phase itself succeeded.
+#[derive(Serialize, Debug)]
+pub struct DeepKillReport {
+    /// Established IPv4 TCP connections of the target found in the table
+    pub attempted: u32,
+    /// Connections the close call accepted (SET: deletion was queued)
+    pub closed: u32,
+    /// Whether the kill phase reported success
+    pub killed: bool,
+}
+
+/// Deep kill (port-killer #100): closes the target's established TCP
+/// connections first — so nothing keeps a dying process alive as a
+/// connection holder — then kills the process itself. Connection closing is
+/// IPv4-only (`SetTcpEntry` has no IPv6 equivalent) and elevation-gated;
+/// close failures never block the kill phase, they only show up in the
+/// report. Must be called while holding the caller's `sys` lock.
+pub fn deep_kill(pid: u32, sys: &sysinfo::System) -> Result<DeepKillReport, String> {
+    // PID 0 (System Idle) and, on Windows, PID 4 (System) are kernel
+    // pseudo-processes: they show up in the connection table through other
+    // processes' TIME_WAIT entries and must never be offered a kill. On
+    // other platforms low PIDs are ordinary processes, so only 0 is refused.
+    if pid == 0 || (cfg!(windows) && pid <= 4) {
+        return Err(format!(
+            "Refusing to kill PID {}: kernel pseudo-process, not a user process",
+            pid
+        ));
+    }
+    let mut report = close_process_connections(pid);
+    report.killed = ProcessMonitor::kill_process(sys, pid);
+    Ok(report)
+}
+
+/// Closes every established IPv4 TCP connection owned by `pid`, returning
+/// the close-phase tally. Non-Windows platforms (no `SetTcpEntry` backend)
+/// and table-query failures report an empty tally; neither is an error —
+/// the kill phase always runs.
+#[cfg(windows)]
+fn close_process_connections(pid: u32) -> DeepKillReport {
+    let connections = match crate::monitoring::network_ports::collect() {
+        Ok(connections) => connections,
+        Err(_) => {
+            return DeepKillReport {
+                attempted: 0,
+                closed: 0,
+                killed: false,
+            }
+        }
+    };
+    let mut attempted = 0;
+    let mut closed = 0;
+    for connection in connections.iter().filter(|c| {
+        c.pid == pid
+            && c.protocol == "TCP"
+            && c.state == "ESTABLISHED"
+            // IPv6 endpoints have no SetTcpEntry equivalent; skip them
+            && !c.local_addr.contains(':')
+    }) {
+        attempted += 1;
+        let closed_ok = crate::monitoring::tcp_control::close(
+            &connection.local_addr,
+            connection.local_port,
+            &connection.remote_addr,
+            connection.remote_port,
+            pid,
+        )
+        .unwrap_or(false);
+        if closed_ok {
+            closed += 1;
+        }
+    }
+    DeepKillReport {
+        attempted,
+        closed,
+        killed: false,
+    }
+}
+
+/// Connection closing is a Windows-only capability; elsewhere the report
+/// carries an empty close tally and the kill phase does all the work.
+#[cfg(not(windows))]
+fn close_process_connections(_pid: u32) -> DeepKillReport {
+    DeepKillReport {
+        attempted: 0,
+        closed: 0,
+        killed: false,
+    }
+}
+
 #[cfg(windows)]
 mod platform {
     use super::ProcessPriorityInfo;

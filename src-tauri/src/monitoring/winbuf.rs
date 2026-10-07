@@ -11,6 +11,7 @@
 //! keeps the original error code in its messages.
 
 use windows_sys::Win32::Foundation::{ERROR_INSUFFICIENT_BUFFER, ERROR_MORE_DATA, ERROR_NO_DATA};
+use windows_sys::Win32::Globalization::{GetOEMCP, MultiByteToWideChar};
 
 /// Initial size for the table buffers; grown when the API reports the
 /// buffer is too small
@@ -28,6 +29,53 @@ const MAX_BUFFER_GROWTH_RETRIES: u32 = 3;
 /// condition.
 pub(crate) fn is_buffer_too_small(error: u32) -> bool {
     error == ERROR_INSUFFICIENT_BUFFER || error == ERROR_MORE_DATA
+}
+
+/// Decodes console-app output bytes: console tools write in the OEM code
+/// page (GBK on zh-CN systems), never assume UTF-8. Trailing newlines are
+/// stripped. Shared by every module that shells out to a console tool
+/// (schtasks, ping).
+pub(crate) fn decode_console_output(bytes: &[u8]) -> String {
+    let mut end = bytes.len();
+    while end > 0 && (bytes[end - 1] == b'\n' || bytes[end - 1] == b'\r') {
+        end -= 1;
+    }
+    let trimmed = &bytes[..end];
+    if trimmed.is_empty() {
+        return String::new();
+    }
+    // SAFETY: trimmed points at `end` valid bytes for the duration of the
+    // calls; the size query and the write use the same buffer
+    let code_page = unsafe { GetOEMCP() };
+    let needed = unsafe {
+        MultiByteToWideChar(
+            code_page,
+            0,
+            trimmed.as_ptr(),
+            trimmed.len() as i32,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if needed > 0 {
+        let mut wide = vec![0u16; needed as usize];
+        // SAFETY: wide is sized by the first query's result
+        let written = unsafe {
+            MultiByteToWideChar(
+                code_page,
+                0,
+                trimmed.as_ptr(),
+                trimmed.len() as i32,
+                wide.as_mut_ptr(),
+                needed,
+            )
+        };
+        if written > 0 {
+            wide.truncate(written as usize);
+            return String::from_utf16_lossy(&wide);
+        }
+    }
+    String::from_utf8_lossy(trimmed).into_owned()
 }
 
 /// Calls an IpHelper table function (GetExtendedTcpTable /

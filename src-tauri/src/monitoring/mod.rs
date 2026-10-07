@@ -28,6 +28,8 @@ pub(crate) mod tcp_control;
 pub(crate) mod window_list;
 // Published-port → container attribution via the docker/podman CLIs
 pub(crate) mod container_ports;
+// Command-line ping for the ports panel's diagnostics dialog
+pub(crate) mod net_diag;
 
 pub use file_lockers::FileLocker;
 pub use port_probe::{PortProbe, identify_port};
@@ -41,6 +43,7 @@ pub use network_ports::{
 };
 pub use process_control::ProcessPriorityInfo;
 pub use process_control::KillTreeResult;
+pub use process_control::DeepKillReport;
 pub use startup_items::StartupItem;
 pub use process_monitor::ProcessMonitor;
 pub use system_monitor::SystemMonitor;

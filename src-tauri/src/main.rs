@@ -57,6 +57,8 @@ fn main() {
             commands::get_processes,
             commands::kill_process,
             commands::kill_process_tree,
+            commands::deep_kill_process,
+            commands::ping_host,
             commands::restart_process,
             commands::get_network_ports,
             commands::get_traffic_counters,

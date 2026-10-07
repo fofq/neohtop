@@ -41,7 +41,6 @@ mod platform {
     use std::os::windows::process::CommandExt;
     use std::path::{Path, PathBuf};
     use windows_sys::Win32::Foundation::{ERROR_MORE_DATA, ERROR_NO_MORE_ITEMS};
-    use windows_sys::Win32::Globalization::{GetOEMCP, MultiByteToWideChar};
     use windows_sys::Win32::System::Registry::{
         RegCloseKey, RegCreateKeyExW, RegDeleteValueW, RegEnumValueW, RegOpenKeyExW,
         RegQueryValueExW, RegSetValueExW, HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE,
@@ -419,52 +418,8 @@ mod platform {
         String::new()
     }
 
-    /// Decodes console-app output: schtasks writes in the OEM code page
-    /// (GBK on zh-CN systems), never assume UTF-8
-    fn decode_console_output(bytes: &[u8]) -> String {
-        let mut end = bytes.len();
-        while end > 0
-            && (bytes[end - 1] == b'\n' || bytes[end - 1] == b'\r')
-        {
-            end -= 1;
-        }
-        let trimmed = &bytes[..end];
-        if trimmed.is_empty() {
-            return String::new();
-        }
-        // SAFETY: trimmed points at `end` valid bytes for the duration of
-        // the calls; the size query and the write use the same buffer
-        let code_page = unsafe { GetOEMCP() };
-        let needed = unsafe {
-            MultiByteToWideChar(
-                code_page,
-                0,
-                trimmed.as_ptr(),
-                trimmed.len() as i32,
-                std::ptr::null_mut(),
-                0,
-            )
-        };
-        if needed > 0 {
-            let mut wide = vec![0u16; needed as usize];
-            // SAFETY: wide is sized by the first query's result
-            let written = unsafe {
-                MultiByteToWideChar(
-                    code_page,
-                    0,
-                    trimmed.as_ptr(),
-                    trimmed.len() as i32,
-                    wide.as_mut_ptr(),
-                    needed,
-                )
-            };
-            if written > 0 {
-                wide.truncate(written as usize);
-                return String::from_utf16_lossy(&wide);
-            }
-        }
-        String::from_utf8_lossy(trimmed).into_owned()
-    }
+    // schtasks console output decodes via winbuf::decode_console_output
+    use crate::monitoring::winbuf::decode_console_output;
 
     /// Parses one CSV row ("a","b with ""quotes""",c) into fields
     fn parse_csv_line(line: &str) -> Vec<String> {
