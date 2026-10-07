@@ -8,5 +8,6 @@ export { default as ServicesModal } from "./ServicesModal.svelte";
 export { default as WindowsModal } from "./WindowsModal.svelte";
 export { default as StartupItemsModal } from "./StartupItemsModal.svelte";
 export { default as ProcessPerformanceTab } from "./ProcessPerformanceTab.svelte";
+export { default as ProcessConnectionsTab } from "./ProcessConnectionsTab.svelte";
 export { default as ProcessServicesTab } from "./ProcessServicesTab.svelte";
 export { default as ProcessModulesTab } from "./ProcessModulesTab.svelte";

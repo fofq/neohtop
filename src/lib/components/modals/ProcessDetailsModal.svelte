@@ -16,6 +16,7 @@
     faSliders,
     faCircleInfo,
     faChartLine,
+    faNetworkWired,
     faGears,
     faCubes,
   } from "@fortawesome/free-solid-svg-icons";
@@ -23,6 +24,7 @@
     ProcessPerformanceTab,
     ProcessServicesTab,
     ProcessModulesTab,
+    ProcessConnectionsTab,
   } from "$lib/components";
 
   export let show = false;
@@ -32,7 +34,12 @@
   export let onShowDetails: (process: Process) => void;
 
   // --- Tabs ---
-  type DetailsTab = "general" | "performance" | "services" | "modules";
+  type DetailsTab =
+    | "general"
+    | "performance"
+    | "connections"
+    | "services"
+    | "modules";
   let activeTab: DetailsTab = "general";
   // Reopening the modal always lands back on the general tab
   $: if (!show) {
@@ -283,6 +290,16 @@
         >
           <Fa icon={faChartLine} />
           <span>{$t("details.tabPerformance")}</span>
+        </button>
+        <button
+          class="tab-btn"
+          class:active={activeTab === "connections"}
+          role="tab"
+          aria-selected={activeTab === "connections"}
+          on:click={() => (activeTab = "connections")}
+        >
+          <Fa icon={faNetworkWired} />
+          <span>{$t("details.tabConnections")}</span>
         </button>
         <button
           class="tab-btn"
@@ -616,6 +633,8 @@
         </div>
       {:else if activeTab === "performance"}
         <ProcessPerformanceTab {process} history={performanceHistory} />
+      {:else if activeTab === "connections"}
+        <ProcessConnectionsTab {process} />
       {:else if activeTab === "services"}
         <ProcessServicesTab {process} />
       {:else if activeTab === "modules"}

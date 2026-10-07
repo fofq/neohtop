@@ -173,8 +173,13 @@ const zhCN: Record<TranslationKey, string> = {
   // Details modal: tabs
   "details.tabGeneral": "常规",
   "details.tabPerformance": "性能",
+  "details.tabConnections": "网络连接",
   "details.tabServices": "服务",
   "details.tabModules": "模块",
+
+  // Details modal: connections tab
+  "details.connHostedBy": "{name}（PID {pid}）的网络连接",
+  "details.connNone": "该进程当前没有网络连接。",
 
   // Details modal: process control (Windows priority / efficiency / affinity)
   "details.controlSection": "进程控制",
@@ -259,6 +264,9 @@ const zhCN: Record<TranslationKey, string> = {
   "ports.copyAddress": "复制地址",
   "ports.browserOpenFailed": "浏览器打开失败",
   "ports.copyFailed": "复制地址失败",
+  "ports.exportCsv": "导出 CSV",
+  "ports.copyJsonReport": "复制 JSON 报告",
+  "ports.reportCopied": "已复制",
   "ports.groupByTree": "按进程树分组",
   "ports.collapseAll": "全部折叠",
   "ports.ownAndChildren": "自有 {own} 条 · 子进程 {children} 条",

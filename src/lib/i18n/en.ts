@@ -172,8 +172,13 @@ const en = {
   // Details modal: tabs
   "details.tabGeneral": "General",
   "details.tabPerformance": "Performance",
+  "details.tabConnections": "Connections",
   "details.tabServices": "Services",
   "details.tabModules": "Modules",
+
+  // Details modal: connections tab
+  "details.connHostedBy": "Network connections of {name} (PID {pid})",
+  "details.connNone": "This process currently holds no network connections.",
 
   // Details modal: process control (Windows priority / efficiency / affinity)
   "details.controlSection": "Process Control",
@@ -262,6 +267,9 @@ const en = {
   "ports.copyAddress": "Copy address",
   "ports.browserOpenFailed": "Failed to open in browser",
   "ports.copyFailed": "Failed to copy address",
+  "ports.exportCsv": "Export CSV",
+  "ports.copyJsonReport": "Copy JSON report",
+  "ports.reportCopied": "Copied",
   "ports.groupByTree": "Group by process tree",
   "ports.collapseAll": "Collapse all",
   "ports.ownAndChildren": "{own} own · {children} from children",

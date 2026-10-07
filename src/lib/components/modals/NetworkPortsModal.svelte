@@ -16,6 +16,8 @@
     faCopy,
     faChartLine,
     faCrosshairs,
+    faFileCode,
+    faFileCsv,
     faLayerGroup,
     faList,
     faPause,
@@ -1375,6 +1377,191 @@
     }, 2400);
   }
 
+  // --- Export (witr-style machine-readable report) -------------------------
+  // The CSV carries raw values (bytes, not formatted strings) so the export
+  // stays parseable; the JSON report's field names are the contract — the
+  // display copy around them may change freely.
+
+  /** CSV of the current filtered view, one row per connection, downloaded
+   * as a file. Respects search/protocol/state/favorite/category filters. */
+  function exportCsv() {
+    const header = [
+      "protocol",
+      "local_addr",
+      "local_port",
+      "remote_addr",
+      "remote_port",
+      "state",
+      "pid",
+      "process",
+      "bytes_sent",
+      "bytes_received",
+    ];
+    const escape = (value: string | number): string => {
+      const text = String(value);
+      return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+    const lines = [header.join(",")];
+    for (const connection of filteredConnections) {
+      lines.push(
+        [
+          connection.protocol,
+          connection.local_addr,
+          connection.local_port,
+          connection.remote_addr,
+          connection.remote_port,
+          connection.state,
+          connection.pid,
+          processNameByPid.get(connection.pid) ?? "",
+          connection.bytes_sent,
+          connection.bytes_received,
+        ]
+          .map(escape)
+          .join(","),
+      );
+    }
+    // BOM keeps Excel on UTF-8 for non-ASCII process names
+    const blob = new Blob(["\ufeff" + lines.join("\r\n")], {
+      type: "text/csv;charset=utf-8",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    const stamp = new Date()
+      .toISOString()
+      .slice(0, 19)
+      .replace("T", "-")
+      .replace(/:/g, "");
+    anchor.href = url;
+    anchor.download = `neohtop-ports-${stamp}.csv`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+  }
+
+  /** Stable warning tokens for the JSON report (the i18n keys are not a
+   * contract; these tokens are). */
+  function warningToken(key: string): string {
+    switch (key) {
+      case "ports.warnWildcard":
+        return "wildcard_bind";
+      case "ports.warnMemory":
+        return "memory_over_1gb";
+      case "ports.warnRuntime":
+        return "runtime_over_90d";
+      default:
+        return key;
+    }
+  }
+
+  /** Machine-readable snapshot of the deep-dive panel: connection tuple,
+   * owning process, exe metadata, container attribution, probe findings,
+   * hosting services and warnings. Optional facts are omitted entirely so
+   * consumers never need to guess between null/empty/absent. */
+  function buildDetailReport(): Record<string, unknown> {
+    const connection = detailConnection;
+    if (!connection) return {};
+    const bindScope = bindScopeOf(connection);
+    const report: Record<string, unknown> = {
+      schema: "neohtop.port-detail/1",
+      generated_at: new Date().toISOString(),
+      connection: {
+        protocol: connection.protocol,
+        local_addr: connection.local_addr,
+        local_port: connection.local_port,
+        remote_addr: connection.remote_addr || null,
+        remote_port: connection.remote_port > 0 ? connection.remote_port : null,
+        state: connection.state,
+        bind:
+          bindScope === "ports.bindAll"
+            ? "wildcard"
+            : bindScope === "ports.bindLocal"
+              ? "loopback"
+              : "adapter",
+      },
+    };
+    const process = detailProcess;
+    if (process) {
+      report.process = {
+        pid: process.pid,
+        name: process.name,
+        user: process.user || null,
+        command: process.command || null,
+        exe: process.root || null,
+        start_time: process.start_time,
+        run_time_seconds: process.run_time,
+        memory_bytes: process.memory_usage,
+        cpu_percent: process.cpu_usage,
+        integrity: detailIntegrity,
+      };
+      const metadata = detailMetadata;
+      if (metadata && (metadata.signed !== null || metadata.company)) {
+        report.exe = {
+          signed: metadata.signed,
+          company: metadata.company || null,
+          version: metadata.version || null,
+          description: metadata.description || null,
+          binary_missing: metadata.binary_missing,
+        };
+      }
+    }
+    if (connection.bytes_sent > 0 || connection.bytes_received > 0) {
+      report.traffic = {
+        bytes_sent: connection.bytes_sent,
+        bytes_received: connection.bytes_received,
+      };
+    }
+    const container = containerOf(connection, containerPortMap);
+    if (container) {
+      report.container = {
+        engine: container.engine,
+        container: container.container,
+        image: container.image,
+        host_port: container.port,
+        target_port: container.target_port,
+      };
+    }
+    const role = portRoleOf(connection);
+    if (role?.tag || detailProbe) {
+      report.probe = {
+        role: role?.tag ?? null,
+        server: detailProbe?.http?.server ?? null,
+        findings: detailProbe ?? null,
+      };
+    }
+    if (detailServices.length > 0) {
+      report.windows_services = detailServices.map(
+        (service) => service.display_name || service.name,
+      );
+    }
+    const label = portLabelOf(connection.local_port);
+    if (label) report.label = label;
+    const warnings = [
+      ...detailWarnings.map((warning) => warningToken(warning.key)),
+      ...(detailMetadata?.binary_missing ? ["binary_missing"] : []),
+    ];
+    if (warnings.length > 0) report.warnings = warnings;
+    return report;
+  }
+
+  /** Copy feedback for the detail panel's JSON report action. */
+  let reportCopied = false;
+  let reportCopiedTimer: ReturnType<typeof setTimeout> | null = null;
+
+  async function copyDetailReport() {
+    const connection = detailConnection;
+    if (!connection) return;
+    try {
+      await navigator.clipboard.writeText(
+        JSON.stringify(buildDetailReport(), null, 2),
+      );
+    } catch {
+      showPortNotice(connectionKey(connection), $t("ports.copyFailed"));
+      return;
+    }
+    reportCopied = true;
+    if (reportCopiedTimer) clearTimeout(reportCopiedTimer);
+    reportCopiedTimer = setTimeout(() => (reportCopied = false), 1600);
+  }
+
   function filterConnections(
     all: PortConnection[],
     term: string,
@@ -2225,6 +2412,16 @@
         {#if !$isElevated}
           <span class="traffic-hint">{$t("ports.trafficAdminHint")}</span>
         {/if}
+        <button
+          class="export-btn"
+          on:click={exportCsv}
+          disabled={filteredConnections.length === 0}
+          title={$t("ports.exportCsv")}
+          aria-label={$t("ports.exportCsv")}
+        >
+          <Fa icon={faFileCsv} />
+          <span>{$t("ports.exportCsv")}</span>
+        </button>
       </div>
 
       {#if watchedPorts.length > 0}
@@ -2832,6 +3029,14 @@
                       <span>{$t("ports.closeConnection")}</span>
                     </button>
                   {/if}
+                  <button class="btn-secondary" on:click={copyDetailReport}>
+                    <Fa icon={reportCopied ? faCheck : faFileCode} />
+                    <span>
+                      {reportCopied
+                        ? $t("ports.reportCopied")
+                        : $t("ports.copyJsonReport")}
+                    </span>
+                  </button>
                 </div>
               </div>
             </td>
@@ -3556,8 +3761,37 @@
   }
 
   .traffic-hint {
-    margin-left: auto;
     color: var(--overlay0);
+  }
+
+  .export-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: auto;
+    padding: 3px 10px;
+    font-size: 12px;
+    color: var(--subtext0);
+    background: var(--surface0);
+    border: 1px solid var(--surface1);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .export-btn:hover:not(:disabled) {
+    color: var(--text);
+    background: var(--surface1);
+  }
+
+  .export-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .export-btn :global(svg) {
+    width: 11px;
+    height: 11px;
   }
 
   /* Watched-port chips: click removes the watch; yellow while a process
