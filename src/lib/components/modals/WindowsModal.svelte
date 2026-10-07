@@ -8,7 +8,7 @@
     faUpRightFromSquare,
   } from "@fortawesome/free-solid-svg-icons";
   import { backToTop } from "$lib/actions/backToTop";
-  import { Modal } from "$lib/components";
+  import { Modal, SearchInput } from "$lib/components";
   import { t } from "$lib/i18n";
   import { processStore } from "$lib/stores/index";
   import { withElevationHint } from "$lib/utils";
@@ -126,12 +126,12 @@
   {:else}
     <div class="windows-content">
       <div class="windows-toolbar">
-        <input
-          class="windows-search"
-          type="text"
-          placeholder={$t("windows.searchPlaceholder")}
-          bind:value={searchTerm}
-        />
+        <div class="windows-search">
+          <SearchInput
+            bind:value={searchTerm}
+            placeholder={$t("windows.searchPlaceholder")}
+          />
+        </div>
         <button
           class="windows-refresh"
           on:click={() => loadWindows()}
@@ -297,22 +297,10 @@
     align-items: center;
   }
 
+  /* Layout only — the shared SearchInput owns the input's look */
   .windows-search {
     flex: 1;
-    height: 28px;
-    padding: 0 10px;
-    font-size: 13px;
-    color: var(--text);
-    background: var(--mantle);
-    border: 1px solid var(--surface1);
-    border-radius: 6px;
-    outline: none;
-    box-sizing: border-box;
-    transition: all 0.2s ease;
-  }
-
-  .windows-search:focus {
-    border-color: var(--blue);
+    min-width: 0;
   }
 
   .windows-refresh {

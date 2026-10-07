@@ -9,7 +9,7 @@
     faXmark,
   } from "@fortawesome/free-solid-svg-icons";
   import { backToTop } from "$lib/actions/backToTop";
-  import { KillProcessModal, Modal } from "$lib/components";
+  import { KillProcessModal, Modal, SearchInput } from "$lib/components";
   import { t } from "$lib/i18n";
   import { processStore } from "$lib/stores/index";
   import { withElevationHint } from "$lib/utils";
@@ -103,13 +103,13 @@
   {:else}
     <div class="lockers-content">
       <div class="lockers-toolbar">
-        <input
-          class="lockers-path"
-          type="text"
-          placeholder={$t("lockers.pathPlaceholder")}
-          bind:value={path}
-          on:keydown={(e) => e.key === "Enter" && findLockers()}
-        />
+        <div class="lockers-path">
+          <SearchInput
+            bind:value={path}
+            placeholder={$t("lockers.pathPlaceholder")}
+            on:keydown={(e) => e.key === "Enter" && findLockers()}
+          />
+        </div>
         <button
           class="lockers-search"
           on:click={findLockers}
@@ -221,22 +221,10 @@
     align-items: center;
   }
 
+  /* Layout only — the shared SearchInput owns the input's look */
   .lockers-path {
     flex: 1;
-    height: 28px;
-    padding: 0 10px;
-    font-size: 13px;
-    color: var(--text);
-    background: var(--mantle);
-    border: 1px solid var(--surface1);
-    border-radius: 6px;
-    outline: none;
-    box-sizing: border-box;
-    transition: all 0.2s ease;
-  }
-
-  .lockers-path:focus {
-    border-color: var(--blue);
+    min-width: 0;
   }
 
   .lockers-search {

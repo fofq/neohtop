@@ -9,6 +9,7 @@
   } from "@fortawesome/free-solid-svg-icons";
   import { t } from "$lib/i18n";
   import { formatBytes } from "$lib/utils";
+  import { SearchInput } from "$lib/components";
   import type { DriverInfo, ModuleInfo, Process } from "$lib/types";
 
   export let process: Process;
@@ -138,13 +139,13 @@
           <span>{$t("modules.driversTab")}</span>
         </button>
       </div>
-      <input
-        class="modules-search"
-        type="text"
-        placeholder={$t("modules.searchPlaceholder")}
-        bind:value={filter}
-        on:input={() => (page = 1)}
-      />
+      <div class="modules-search">
+        <SearchInput
+          bind:value={filter}
+          placeholder={$t("modules.searchPlaceholder")}
+          on:input={() => (page = 1)}
+        />
+      </div>
       <button
         class="modules-refresh"
         on:click={refreshCurrent}
@@ -300,23 +301,10 @@
     height: 10px;
   }
 
+  /* Layout only — the shared SearchInput owns the input's look */
   .modules-search {
     flex: 1;
-    height: 28px;
-    padding: 0 10px;
-    font-size: 13px;
-    color: var(--text);
-    background: var(--mantle);
-    border: 1px solid var(--surface1);
-    border-radius: 6px;
-    outline: none;
-    box-sizing: border-box;
-    transition: all 0.2s ease;
     min-width: 0;
-  }
-
-  .modules-search:focus {
-    border-color: var(--blue);
   }
 
   .modules-refresh {

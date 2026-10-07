@@ -12,7 +12,7 @@
     faTriangleExclamation,
   } from "@fortawesome/free-solid-svg-icons";
   import { backToTop } from "$lib/actions/backToTop";
-  import { Modal } from "$lib/components";
+  import { Modal, SearchInput } from "$lib/components";
   import { t } from "$lib/i18n";
   import { isElevated, settingsStore } from "$lib/stores";
   import { withElevationHint } from "$lib/utils";
@@ -227,12 +227,12 @@
     {/if}
 
     <div class="startup-toolbar">
-      <input
-        class="startup-search"
-        type="text"
-        placeholder={$t("startup.searchPlaceholder")}
-        bind:value={searchTerm}
-      />
+      <div class="startup-search">
+        <SearchInput
+          bind:value={searchTerm}
+          placeholder={$t("startup.searchPlaceholder")}
+        />
+      </div>
       <button
         class="chip toolbar-chip"
         class:active={hideSystem}
@@ -477,22 +477,10 @@
     align-items: center;
   }
 
+  /* Layout only — the shared SearchInput owns the input's look */
   .startup-search {
     flex: 1;
-    height: 28px;
-    padding: 0 10px;
-    font-size: 12px;
-    color: var(--text);
-    background: var(--mantle);
-    border: 1px solid var(--surface1);
-    border-radius: 6px;
-    outline: none;
-    box-sizing: border-box;
-    transition: border-color 0.2s ease;
-  }
-
-  .startup-search:focus {
-    border-color: var(--blue);
+    min-width: 0;
   }
 
   /* The hide-built-in toggle rides in the search row as a view option,

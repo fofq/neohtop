@@ -34,7 +34,7 @@
     faPen,
   } from "@fortawesome/free-solid-svg-icons";
   import { backToTop } from "$lib/actions/backToTop";
-  import { Modal } from "$lib/components";
+  import { Modal, SearchInput } from "$lib/components";
   import { t } from "$lib/i18n";
   import { platform } from "@tauri-apps/plugin-os";
   import {
@@ -2282,12 +2282,12 @@
 >
   <div class="ports-content">
     <div class="ports-toolbar">
-      <input
-        class="ports-search"
-        type="text"
-        placeholder={$t("ports.searchPlaceholder")}
-        bind:value={searchTerm}
-      />
+      <div class="ports-search">
+        <SearchInput
+          bind:value={searchTerm}
+          placeholder={$t("ports.searchPlaceholder")}
+        />
+      </div>
       <div class="view-toggle" role="group" aria-label={$t("tools.viewMode")}>
         <button
           class:active={viewMode === "flat"}
@@ -3717,22 +3717,10 @@
     align-items: center;
   }
 
+  /* Layout only — the shared SearchInput owns the input's look */
   .ports-search {
     flex: 1;
-    height: 28px;
-    padding: 0 10px;
-    font-size: 13px;
-    color: var(--text);
-    background: var(--mantle);
-    border: 1px solid var(--surface1);
-    border-radius: 6px;
-    outline: none;
-    box-sizing: border-box;
-    transition: all 0.2s ease;
-  }
-
-  .ports-search:focus {
-    border-color: var(--blue);
+    min-width: 0;
   }
 
   /* Icon-only view switch, aligned with the main toolbar's toggle */
