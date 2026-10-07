@@ -411,6 +411,11 @@ const en = {
   "services.stop": "Stop",
   "services.pause": "Pause",
   "services.resume": "Resume",
+  "services.restart": "Restart",
+  "services.startTypeTitle": "Change Start Type",
+  "services.startTypeMessage":
+    "Change the start type of “{name}” from {from} to {to}?",
+  "services.startTypeConfirm": "Change",
   "services.confirmMessage": "{action} the service “{name}”?",
   "services.working": "Working...",
 
@@ -435,6 +440,9 @@ const en = {
   "windows.stateMinimized": "Minimized",
   "windows.stateHidden": "Hidden",
   "windows.showWindow": "Show window",
+  "windows.minimize": "Minimize",
+  "windows.restore": "Restore",
+  "windows.hide": "Hide",
   "windows.showDetails": "Show Details",
   "windows.notInSnapshot": "Process not in the current process list",
   "windows.crosshairTodo":

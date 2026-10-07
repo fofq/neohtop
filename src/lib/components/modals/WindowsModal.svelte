@@ -4,8 +4,11 @@
   import Fa from "svelte-fa";
   import {
     faCrosshairs,
+    faEyeSlash,
     faRefresh,
     faUpRightFromSquare,
+    faWindowMinimize,
+    faWindowRestore,
   } from "@fortawesome/free-solid-svg-icons";
   import { backToTop } from "$lib/actions/backToTop";
   import { Modal, SearchInput } from "$lib/components";
@@ -27,7 +30,7 @@
   type StateFilter = "all" | "visible" | "minimized" | "hidden";
 
   let stateFilter: StateFilter = "all";
-  // PID whose show_window call is in flight, for per-row feedback
+  // Window whose control call is in flight, for per-row feedback
   let showingId: number | null = null;
 
   // Resolve PIDs against the current process snapshot so rows can jump to
@@ -103,12 +106,18 @@
     }
   }
 
-  async function showWindow(window: AppWindow) {
+  /** "Bring to front" keeps the dedicated foreground-stealing command;
+   * hide/minimize/restore ride the generic ShowWindow switch. */
+  async function controlWindow(window: AppWindow, action: string) {
     if (showingId !== null) return;
     showingId = window.id;
     error = null;
     try {
-      await invoke<boolean>("show_window", { id: window.id });
+      if (action === "show") {
+        await invoke<boolean>("show_window", { id: window.id });
+      } else {
+        await invoke<boolean>("control_window", { id: window.id, action });
+      }
     } catch (e) {
       error = withElevationHint(e instanceof Error ? e.message : String(e));
     } finally {
@@ -236,19 +245,75 @@
                     >
                   </td>
                   <td class="actions-col">
-                    <button
-                      class="row-action"
-                      disabled={showingId === window.id}
-                      on:click={() => showWindow(window)}
-                      title={$t("windows.showWindow")}
-                      aria-label={$t("windows.showWindow")}
-                    >
-                      {#if showingId === window.id}
-                        <span class="spinner"></span>
-                      {:else}
+                    <!-- State-dependent action set: visible windows get
+                         front/minimize/hide, minimized ones restore/hide,
+                         hidden ones just the show switch -->
+                    {#if displayStateOf(window) === "minimized"}
+                      <button
+                        class="row-action"
+                        disabled={showingId === window.id}
+                        on:click={() => controlWindow(window, "restore")}
+                        title={$t("windows.restore")}
+                        aria-label={$t("windows.restore")}
+                      >
+                        {#if showingId === window.id}
+                          <span class="spinner"></span>
+                        {:else}
+                          <Fa icon={faWindowRestore} />
+                        {/if}
+                      </button>
+                      <button
+                        class="row-action"
+                        disabled={showingId === window.id}
+                        on:click={() => controlWindow(window, "hide")}
+                        title={$t("windows.hide")}
+                        aria-label={$t("windows.hide")}
+                      >
+                        <Fa icon={faEyeSlash} />
+                      </button>
+                    {:else if displayStateOf(window) === "hidden"}
+                      <button
+                        class="row-action"
+                        disabled={showingId === window.id}
+                        on:click={() => controlWindow(window, "show")}
+                        title={$t("windows.showWindow")}
+                        aria-label={$t("windows.showWindow")}
+                      >
+                        {#if showingId === window.id}
+                          <span class="spinner"></span>
+                        {:else}
+                          <Fa icon={faUpRightFromSquare} />
+                        {/if}
+                      </button>
+                    {:else}
+                      <button
+                        class="row-action"
+                        disabled={showingId === window.id}
+                        on:click={() => controlWindow(window, "show")}
+                        title={$t("windows.showWindow")}
+                        aria-label={$t("windows.showWindow")}
+                      >
                         <Fa icon={faUpRightFromSquare} />
-                      {/if}
-                    </button>
+                      </button>
+                      <button
+                        class="row-action"
+                        disabled={showingId === window.id}
+                        on:click={() => controlWindow(window, "minimize")}
+                        title={$t("windows.minimize")}
+                        aria-label={$t("windows.minimize")}
+                      >
+                        <Fa icon={faWindowMinimize} />
+                      </button>
+                      <button
+                        class="row-action"
+                        disabled={showingId === window.id}
+                        on:click={() => controlWindow(window, "hide")}
+                        title={$t("windows.hide")}
+                        aria-label={$t("windows.hide")}
+                      >
+                        <Fa icon={faEyeSlash} />
+                      </button>
+                    {/if}
                     <button
                       class="row-action"
                       disabled={!processByPid.has(window.pid)}

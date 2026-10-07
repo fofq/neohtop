@@ -12,6 +12,7 @@
     faPause,
     faPlay,
     faRefresh,
+    faRotateRight,
     faStop,
   } from "@fortawesome/free-solid-svg-icons";
   import { backToTop } from "$lib/actions/backToTop";
@@ -240,19 +241,24 @@
     }
   }
 
-  // --- Service control (start/stop/pause/resume) with confirmation ---
-  type ServiceAction = "start" | "stop" | "pause" | "continue";
+  // --- Service control (start/stop/pause/resume/restart) with confirmation ---
+  type ServiceAction = "start" | "stop" | "pause" | "continue" | "restart";
   let confirmAction: { service: ServiceInfo; action: ServiceAction } | null =
     null;
   let isControlling = false;
   let controlError: string | null = null;
+
+  // Start types the in-place editor offers; boot/system are kernel-managed
+  // and unknown is a query failure, so none of them are settable
+  const SETTABLE_START_TYPES = ["auto", "manual", "disabled"] as const;
+  let confirmStartType: { service: ServiceInfo; value: string } | null = null;
 
   // Actions offered per state; the backend re-validates the control
   // against what the service currently accepts
   function actionsOf(service: ServiceInfo): ServiceAction[] {
     switch (service.status) {
       case "running":
-        return ["stop", "pause"];
+        return ["restart", "stop", "pause"];
       case "paused":
         return ["continue", "stop"];
       case "stopped":
@@ -272,6 +278,8 @@
         return faPause;
       case "continue":
         return faPlay;
+      case "restart":
+        return faRotateRight;
     }
   }
 
@@ -285,6 +293,8 @@
         return $t("services.pause");
       case "continue":
         return $t("services.resume");
+      case "restart":
+        return $t("services.restart");
     }
   }
 
@@ -293,16 +303,35 @@
     confirmAction = { service, action };
   }
 
+  /** Changing the start type rides the same confirmation flow; a no-op
+   * selection (same value) is ignored, and cancelling reloads so the
+   * select falls back to the stored value. */
+  function askStartTypeChange(service: ServiceInfo, value: string) {
+    if (value === service.start_type) return;
+    controlError = null;
+    confirmStartType = { service, value };
+  }
+
+  function cancelStartTypeChange() {
+    confirmStartType = null;
+    // Re-render the selects from stored data — the DOM select already
+    // shows the user's tentative pick
+    loadServices();
+  }
+
   async function handleConfirmControl() {
     if (!confirmAction || isControlling) return;
     isControlling = true;
     controlError = null;
     const { service, action } = confirmAction;
     try {
-      const accepted = await invoke<boolean>("control_service", {
-        name: service.name,
-        action,
-      });
+      const accepted =
+        action === "restart"
+          ? await invoke<boolean>("restart_service", { name: service.name })
+          : await invoke<boolean>("control_service", {
+              name: service.name,
+              action,
+            });
       if (!accepted) {
         throw new Error("The service control was not accepted");
       }
@@ -310,6 +339,33 @@
       await loadServices();
       // The state change completes asynchronously on the SCM side, so a
       // second read catches the settled state shortly after
+      setTimeout(() => {
+        if (show) loadServices();
+      }, 1500);
+    } catch (e) {
+      controlError = withElevationHint(
+        e instanceof Error ? e.message : String(e),
+      );
+    } finally {
+      isControlling = false;
+    }
+  }
+
+  async function handleConfirmStartType() {
+    if (!confirmStartType || isControlling) return;
+    isControlling = true;
+    controlError = null;
+    const { service, value } = confirmStartType;
+    try {
+      const ok = await invoke<boolean>("set_service_start_type", {
+        name: service.name,
+        start_type: value,
+      });
+      if (!ok) {
+        throw new Error("The start type change was not accepted");
+      }
+      confirmStartType = null;
+      await loadServices();
       setTimeout(() => {
         if (show) loadServices();
       }, 1500);
@@ -498,9 +554,24 @@
                         >{serviceStatusLabel(service.status, $t)}</span
                       >
                     </td>
-                    <td class="mono"
-                      >{serviceStartTypeLabel(service.start_type, $t)}</td
-                    >
+                    <td class="mono">
+                      <select
+                        class="start-type-select"
+                        value={service.start_type}
+                        disabled={isControlling}
+                        on:change={(event) =>
+                          askStartTypeChange(
+                            service,
+                            event.currentTarget.value,
+                          )}
+                      >
+                        {#each SETTABLE_START_TYPES as startType (startType)}
+                          <option value={startType}
+                            >{serviceStartTypeLabel(startType, $t)}</option
+                          >
+                        {/each}
+                      </select>
+                    </td>
                     <td class="mono pid-cell">
                       {#if service.pid !== 0 && processByPid.has(service.pid)}
                         <button
@@ -574,9 +645,24 @@
                             >{serviceStatusLabel(service.status, $t)}</span
                           >
                         </td>
-                        <td class="mono"
-                          >{serviceStartTypeLabel(service.start_type, $t)}</td
-                        >
+                        <td class="mono">
+                          <select
+                            class="start-type-select"
+                            value={service.start_type}
+                            disabled={isControlling}
+                            on:change={(event) =>
+                              askStartTypeChange(
+                                service,
+                                event.currentTarget.value,
+                              )}
+                          >
+                            {#each SETTABLE_START_TYPES as startType (startType)}
+                              <option value={startType}
+                                >{serviceStartTypeLabel(startType, $t)}</option
+                              >
+                            {/each}
+                          </select>
+                        </td>
                         <td class="mono">
                           {service.pid || "-"}
                         </td>
@@ -655,6 +741,50 @@
           {:else}
             <Fa icon={actionIcon(confirmAction.action)} />
             <span>{actionLabel(confirmAction.action)}</span>
+          {/if}
+        </button>
+      </div>
+    </div>
+  {/if}
+</Modal>
+
+<!-- Start-type change confirmation, styled after the control confirm -->
+<Modal
+  show={confirmStartType !== null}
+  title={$t("services.startTypeTitle")}
+  maxWidth="420px"
+  onClose={cancelStartTypeChange}
+>
+  {#if confirmStartType}
+    <div class="confirm-content">
+      <p class="confirm-message">
+        {$t("services.startTypeMessage", {
+          name: confirmStartType.service.display_name,
+          from: serviceStartTypeLabel(confirmStartType.service.start_type, $t),
+          to: serviceStartTypeLabel(confirmStartType.value, $t),
+        })}
+      </p>
+      {#if controlError}
+        <p class="confirm-error">{controlError}</p>
+      {/if}
+      <div class="confirm-actions">
+        <button
+          class="btn-secondary"
+          on:click={cancelStartTypeChange}
+          disabled={isControlling}
+        >
+          {$t("modal.cancel")}
+        </button>
+        <button
+          class="btn-primary"
+          on:click={handleConfirmStartType}
+          disabled={isControlling}
+        >
+          {#if isControlling}
+            <div class="spinner"></div>
+            <span>{$t("services.working")}</span>
+          {:else}
+            <span>{$t("services.startTypeConfirm")}</span>
           {/if}
         </button>
       </div>
@@ -1168,6 +1298,29 @@
   .btn-primary .spinner {
     border-color: color-mix(in srgb, var(--base) 30%, transparent);
     border-top-color: var(--base);
+  }
+
+  .start-type-select {
+    max-width: 110px;
+    height: 24px;
+    padding: 0 4px;
+    font-size: 12px;
+    color: var(--text);
+    background: var(--surface0);
+    border: 1px solid var(--surface1);
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+  }
+
+  .start-type-select:hover:not(:disabled) {
+    border-color: var(--surface2);
+    background: var(--surface1);
+  }
+
+  .start-type-select:focus {
+    outline: none;
+    border-color: var(--blue);
   }
 
   @keyframes spin {

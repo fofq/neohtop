@@ -45,6 +45,13 @@ pub fn show(id: isize) -> Result<bool, String> {
     platform::show(id)
 }
 
+/// Shows, hides, minimizes or restores a window by handle. Plain
+/// visibility/state switches — the foreground-stealing "bring to front"
+/// variant lives in [`show`].
+pub fn control(id: isize, action: &str) -> Result<bool, String> {
+    platform::control(id, action)
+}
+
 #[cfg(windows)]
 mod platform {
     use super::AppWindow;
@@ -54,7 +61,8 @@ mod platform {
     };
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         EnumWindows, GetWindowThreadProcessId, GetWindowTextLengthW, GetWindowTextW, IsIconic,
-        IsWindow, IsWindowVisible, SetForegroundWindow, ShowWindow, SW_RESTORE, SW_SHOW,
+        IsWindow, IsWindowVisible, SetForegroundWindow, ShowWindow, SW_HIDE, SW_MINIMIZE,
+        SW_RESTORE, SW_SHOW,
     };
 
     /// State threaded through `EnumWindows`' LPARAM
@@ -186,6 +194,31 @@ mod platform {
         unsafe { SetForegroundWindow(hwnd) };
         Ok(true)
     }
+
+    pub fn control(id: isize, action: &str) -> Result<bool, String> {
+        let command = match action {
+            "show" => SW_SHOW,
+            "hide" => SW_HIDE,
+            "minimize" => SW_MINIMIZE,
+            "restore" => SW_RESTORE,
+            _ => {
+                return Err(format!(
+                    "Unknown window action '{}': expected show, hide, minimize or restore",
+                    action
+                ))
+            }
+        };
+        // SAFETY: id comes from a previous list_windows call; IsWindow
+        // validates the handle before any further use
+        let hwnd = id as HWND;
+        if unsafe { IsWindow(hwnd) } == 0 {
+            return Err(format!("No window with handle {} exists anymore", id));
+        }
+        // SAFETY: hwnd is a validated live window handle. A zero return
+        // only means the window was already in the requested state
+        unsafe { ShowWindow(hwnd, command) };
+        Ok(true)
+    }
 }
 
 #[cfg(not(windows))]
@@ -196,5 +229,9 @@ mod platform {
 
     pub fn show(_id: isize) -> Result<bool, String> {
         Err("Showing windows is only supported on Windows".to_string())
+    }
+
+    pub fn control(_id: isize, _action: &str) -> Result<bool, String> {
+        Err("Controlling windows is only supported on Windows".to_string())
     }
 }

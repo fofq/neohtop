@@ -676,6 +676,56 @@ pub async fn show_window(id: isize) -> Result<bool, String> {
         .map_err(|e| format!("Failed to show the window: {}", e))?
 }
 
+/// Restarts a service: stops it, waits for the SCM to settle into the
+/// stopped state and starts it again. Requires elevation.
+///
+/// # Arguments
+///
+/// * `name` - Service name to restart
+///
+/// # Returns
+///
+/// * `true` if the stop was accepted and the start succeeded
+#[tauri::command]
+pub async fn restart_service(name: String) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || services::restart(&name))
+        .await
+        .map_err(|e| format!("Failed to restart the service: {}", e))?
+}
+
+/// Changes a service's start type ("auto", "manual" or "disabled").
+/// Requires elevation.
+///
+/// # Arguments
+///
+/// * `name` - Service name to reconfigure
+/// * `start_type` - Desired start type
+#[tauri::command]
+pub async fn set_service_start_type(
+    name: String,
+    start_type: String,
+) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        services::set_start_type(&name, &start_type)
+    })
+    .await
+    .map_err(|e| format!("Failed to change the start type: {}", e))?
+}
+
+/// Shows, hides, minimizes or restores a window by handle. The
+/// foreground-stealing "bring to front" variant is [`show_window`].
+///
+/// # Arguments
+///
+/// * `id` - Window handle from `list_windows`
+/// * `action` - One of "show", "hide", "minimize", "restore"
+#[tauri::command]
+pub async fn control_window(id: isize, action: String) -> Result<bool, String> {
+    tauri::async_runtime::spawn_blocking(move || window_list::control(id, &action))
+        .await
+        .map_err(|e| format!("Failed to control the window: {}", e))?
+}
+
 /// Reads the metadata (company, description, version, elevation) of a process
 ///
 /// The data comes from the version resource of the executable plus its

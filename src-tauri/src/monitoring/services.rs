@@ -54,6 +54,13 @@ pub fn set_start_type(name: &str, start_type: &str) -> Result<bool, String> {
     platform::set_start_type(name, start_type)
 }
 
+/// Restarts a running service: stops it, waits for the SCM to settle into
+/// the stopped state, then starts it again. A service that is already
+/// stopped is simply started. Requires elevation.
+pub fn restart(name: &str) -> Result<bool, String> {
+    platform::restart(name)
+}
+
 /// Services disabled through the startup-items panel during this
 /// session. Disabled auto-start services drop out of the "auto" filter, so
 /// the panel needs this bookmark to keep showing (and re-enabling) them;
@@ -267,15 +274,108 @@ mod platform {
         outcome
     }
 
+    /// How long a restart waits for the SCM to finish stopping before the
+    /// start attempt is abandoned
+    const RESTART_STOP_TIMEOUT_MS: u64 = 10_000;
+    /// Poll interval while waiting for the stopped state
+    const RESTART_POLL_INTERVAL_MS: u64 = 200;
+
+    pub fn restart(name: &str) -> Result<bool, String> {
+        if !process_control::is_elevated() {
+            return Err(
+                "Restarting a service requires administrator privileges; restart the app as administrator first"
+                    .to_string(),
+            );
+        }
+        let scm = open_scm(SC_MANAGER_CONNECT)?;
+        let name_wide = to_wide(name);
+        // SAFETY: name_wide is a NUL-terminated buffer; the returned handle
+        // is closed on every path below
+        let service = unsafe {
+            OpenServiceW(
+                scm,
+                name_wide.as_ptr(),
+                SERVICE_STOP | SERVICE_START | SERVICE_QUERY_STATUS,
+            )
+        };
+        if service.is_null() {
+            let error = unsafe { GetLastError() };
+            // SAFETY: scm is the valid handle from open_scm
+            unsafe { CloseServiceHandle(scm) };
+            return Err(match error {
+                ERROR_SERVICE_DOES_NOT_EXIST => format!("No service named '{}' exists", name),
+                ERROR_ACCESS_DENIED => format!(
+                    "Accessing the service '{}' requires administrator privileges (Windows error {})",
+                    name, error
+                ),
+                _ => format!("Failed to open the service '{}' (Windows error {})", name, error),
+            });
+        }
+        let outcome = restart_service(service, name);
+        // SAFETY: service and scm are the valid handles opened above
+        unsafe { CloseServiceHandle(service) };
+        unsafe { CloseServiceHandle(scm) };
+        outcome
+    }
+
+    /// Stops the service (already-stopped counts as done), waits for the
+    /// SCM to settle into SERVICE_STOPPED, then starts it again
+    fn restart_service(service: SC_HANDLE, name: &str) -> Result<bool, String> {
+        if !is_service_stopped(service, name)? {
+            control_running_service(service, name, SERVICE_CONTROL_STOP, "stop")?;
+            let deadline = std::time::Instant::now()
+                + std::time::Duration::from_millis(RESTART_STOP_TIMEOUT_MS);
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(RESTART_POLL_INTERVAL_MS));
+                if is_service_stopped(service, name)? {
+                    break;
+                }
+                if std::time::Instant::now() > deadline {
+                    return Err(format!(
+                        "The service '{}' did not stop within {} ms; not starting it again",
+                        name, RESTART_STOP_TIMEOUT_MS
+                    ));
+                }
+            }
+        }
+        start_service(service, name)
+    }
+
+    /// Whether the service is currently in the SERVICE_STOPPED state
+    fn is_service_stopped(service: SC_HANDLE, name: &str) -> Result<bool, String> {
+        let mut status_process: SERVICE_STATUS_PROCESS = unsafe { std::mem::zeroed() };
+        let mut needed: u32 = 0;
+        // SAFETY: status_process is a zeroed, correctly sized
+        // SERVICE_STATUS_PROCESS and needed is a plain out-parameter
+        let ok = unsafe {
+            QueryServiceStatusEx(
+                service,
+                SC_STATUS_PROCESS_INFO,
+                &mut status_process as *mut SERVICE_STATUS_PROCESS as *mut u8,
+                std::mem::size_of::<SERVICE_STATUS_PROCESS>() as u32,
+                &mut needed,
+            )
+        };
+        if ok == 0 {
+            let error = unsafe { GetLastError() };
+            return Err(format!(
+                "Failed to query the state of the service '{}' (Windows error {})",
+                name, error
+            ));
+        }
+        Ok(status_process.dwCurrentState == SERVICE_STOPPED)
+    }
+
     /// Changes a service's start type between auto-start and disabled via
     /// ChangeServiceConfigW. Requires elevation.
     pub fn set_start_type(name: &str, start_type: &str) -> Result<bool, String> {
         let desired = match start_type {
             "auto" => SERVICE_AUTO_START,
+            "manual" => SERVICE_DEMAND_START,
             "disabled" => SERVICE_DISABLED,
             _ => {
                 return Err(format!(
-                    "Unsupported service start type '{}': expected auto or disabled",
+                    "Unsupported service start type '{}': expected auto, manual or disabled",
                     start_type
                 ))
             }
@@ -566,6 +666,10 @@ mod platform {
     }
 
     pub fn set_start_type(_name: &str, _start_type: &str) -> Result<bool, String> {
+        Err("Service management is only supported on Windows".to_string())
+    }
+
+    pub fn restart(_name: &str) -> Result<bool, String> {
         Err("Service management is only supported on Windows".to_string())
     }
 }

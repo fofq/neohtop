@@ -7,6 +7,7 @@
     faGears,
     faPlay,
     faRefresh,
+    faRotateRight,
     faStop,
   } from "@fortawesome/free-solid-svg-icons";
   import { Modal } from "$lib/components";
@@ -21,7 +22,7 @@
 
   let confirmAction: {
     service: ServiceInfo;
-    action: "start" | "stop";
+    action: "start" | "stop" | "restart";
   } | null = null;
   let isControlling = false;
   let controlError: string | null = null;
@@ -77,15 +78,32 @@
     return label === key ? startType : label;
   }
 
-  function actionIcon(action: "start" | "stop") {
-    return action === "start" ? faPlay : faStop;
+  function actionIcon(action: "start" | "stop" | "restart") {
+    switch (action) {
+      case "start":
+        return faPlay;
+      case "stop":
+        return faStop;
+      case "restart":
+        return faRotateRight;
+    }
   }
 
-  function actionLabel(action: "start" | "stop"): string {
-    return action === "start" ? $t("services.start") : $t("services.stop");
+  function actionLabel(action: "start" | "stop" | "restart"): string {
+    switch (action) {
+      case "start":
+        return $t("services.start");
+      case "stop":
+        return $t("services.stop");
+      case "restart":
+        return $t("services.restart");
+    }
   }
 
-  function askConfirm(service: ServiceInfo, action: "start" | "stop") {
+  function askConfirm(
+    service: ServiceInfo,
+    action: "start" | "stop" | "restart",
+  ) {
     controlError = null;
     confirmAction = { service, action };
   }
@@ -96,10 +114,13 @@
     controlError = null;
     const { service, action } = confirmAction;
     try {
-      const accepted = await invoke<boolean>("control_service", {
-        name: service.name,
-        action,
-      });
+      const accepted =
+        action === "restart"
+          ? await invoke<boolean>("restart_service", { name: service.name })
+          : await invoke<boolean>("control_service", {
+              name: service.name,
+              action,
+            });
       if (!accepted) {
         throw new Error("The service control was not accepted");
       }
@@ -189,6 +210,14 @@
                 </td>
                 <td class="actions-col">
                   {#if service.status === "running"}
+                    <button
+                      class="row-action"
+                      on:click={() => askConfirm(service, "restart")}
+                      title={$t("services.restart")}
+                      aria-label={$t("services.restart")}
+                    >
+                      <Fa icon={faRotateRight} />
+                    </button>
                     <button
                       class="row-action"
                       on:click={() => askConfirm(service, "stop")}
