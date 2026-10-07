@@ -513,3 +513,8 @@ export function withElevationHint(message: string): string {
   }
   return `${message} — ${get(t)("settings.elevationHint")}`;
 }
+export {
+  buildAncestryChain,
+  type AncestryChain,
+  type ChainSegment,
+} from "./ancestry";

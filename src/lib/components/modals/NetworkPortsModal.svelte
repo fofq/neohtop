@@ -44,6 +44,7 @@
     isElevated,
   } from "$lib/stores/index";
   import {
+    buildAncestryChain,
     formatBytes,
     formatDate,
     formatPercentage,
@@ -667,17 +668,8 @@
   // connection disappears from a refresh.
   type DetailWarning = { key: string; tone: "red" | "yellow" };
 
-  /** One breadcrumb segment of the ancestry chain; the last one is the subject. */
-  interface ChainSegment {
-    pid: number;
-    name: string;
-    /** Command line shown on hover; null when the snapshot lacks it. */
-    command: string | null;
-    isSubject: boolean;
-  }
-
-  /** How far the ppid walk may go before the chain is cut off. */
-  const MAX_CHAIN_DEPTH = 32;
+  // Ancestry-chain builder lives in $lib/utils/ancestry (shared with the
+  // process details modal)
 
   let detailKey: string | null = null;
   let detailMetadata: ProcessMetadata | null = null;
@@ -775,52 +767,6 @@
       (isFavorite ? head : tail).push(group);
     }
     return head.length === 0 ? groups : head.concat(tail);
-  }
-
-  /**
-   * Walks the ppid chain from the panel's process up through the snapshot,
-   * oldest ancestor first, with the subject process as the final segment.
-   * Cycles and self-references stop the walk; a parent that is not in the
-   * snapshot marks the chain broken ("parent has exited or is not visible").
-   */
-  function buildAncestryChain(
-    process: Process,
-    processes: Process[],
-  ): { segments: ChainSegment[]; broken: boolean; orphaned: boolean } {
-    const byPid = new Map(processes.map((entry) => [entry.pid, entry]));
-    const segments: ChainSegment[] = [
-      {
-        pid: process.pid,
-        name: process.name,
-        command: process.command || null,
-        isSubject: true,
-      },
-    ];
-    const visited = new Set<number>([process.pid]);
-    let broken = false;
-    let current = process;
-    for (let depth = 0; depth < MAX_CHAIN_DEPTH; depth++) {
-      const ppid = current.ppid;
-      if (!ppid || ppid === current.pid || visited.has(ppid)) break;
-      const parent = byPid.get(ppid);
-      if (!parent) {
-        broken = true;
-        break;
-      }
-      visited.add(ppid);
-      segments.unshift({
-        pid: parent.pid,
-        name: parent.name,
-        command: parent.command || null,
-        isSubject: false,
-      });
-      current = parent;
-    }
-    // A missing DIRECT parent is the interesting case (nothing vouches for
-    // the process); a missing grandparent-and-beyond is the Windows norm —
-    // short-lived launchers (userinit, smss) exit right after spawning,
-    // so nearly every GUI/service chain breaks somewhere up top.
-    return { segments, broken, orphaned: broken && segments.length === 1 };
   }
 
   // Warnings follow witr: security-relevant facts first (red), resource

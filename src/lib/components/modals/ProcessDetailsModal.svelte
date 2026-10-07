@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Modal } from "$lib/components";
-  import { formatBytes } from "$lib/utils";
+  import { buildAncestryChain, formatBytes } from "$lib/utils";
   import { t, statusLabel } from "$lib/i18n";
   import type { Process } from "$lib/types";
   import { invoke } from "@tauri-apps/api/core";
@@ -16,6 +16,7 @@
     faSliders,
     faCircleInfo,
     faChartLine,
+    faLink,
     faNetworkWired,
     faGears,
     faCubes,
@@ -53,6 +54,10 @@
   $: childProcesses = process
     ? processes.filter((p) => p.ppid === process.pid)
     : [];
+
+  // "Why is this running?" — the same ppid ancestry chain the ports panel
+  // shows, resolved against the snapshot on every refresh
+  $: ancestryChain = process ? buildAncestryChain(process, processes) : null;
 
   // --- Process control (priority / efficiency / affinity) ---
   // Mirrors the backend ProcessPriorityInfo (Windows only; other platforms
@@ -325,6 +330,59 @@
 
       <!-- Main Content -->
       {#if activeTab === "general"}
+        <!-- Ancestry chain ("why is this running?") — the same breadcrumb
+             the ports deep-dive panel shows; ancestors click through to
+             their own details -->
+        {#if ancestryChain}
+          <div class="card">
+            <div class="card-header">
+              <Fa icon={faLink} />
+              <span>{$t("ports.chainLabel")}</span>
+            </div>
+            <div class="card-content">
+              <div class="detail-chain">
+                {#each ancestryChain.segments as segment, i (segment.pid)}
+                  {#if i > 0}
+                    <span class="chain-arrow">→</span>
+                  {/if}
+                  {#if segment.isSubject}
+                    <span
+                      class="chain-seg subject"
+                      title={segment.command ?? segment.name}
+                    >
+                      <span class="chain-name">{segment.name}</span>
+                      <span class="chain-pid">({segment.pid})</span>
+                    </span>
+                  {:else}
+                    <button
+                      class="chain-seg clickable"
+                      title={segment.command ?? segment.name}
+                      on:click={() => {
+                        const target = processes.find(
+                          (p) => p.pid === segment.pid,
+                        );
+                        if (target) onShowDetails(target);
+                      }}
+                    >
+                      <span class="chain-name">{segment.name}</span>
+                      <span class="chain-pid">({segment.pid})</span>
+                    </button>
+                  {/if}
+                {/each}
+                {#if ancestryChain.broken}
+                  <span class="chain-broken">
+                    {$t(
+                      ancestryChain.orphaned
+                        ? "ports.chainBroken"
+                        : "ports.chainAncient",
+                    )}
+                  </span>
+                {/if}
+              </div>
+            </div>
+          </div>
+        {/if}
+
         <div class="content-grid">
           <!-- Left Column -->
           <div class="content-column">
@@ -1135,6 +1193,73 @@
 
   .spinner {
     width: 14px;
+  }
+
+  /* Ancestry chain (mirrors the ports deep-dive panel's breadcrumb) */
+  .detail-chain {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    font-size: 13px;
+  }
+
+  .chain-seg {
+    display: inline-flex;
+    gap: 4px;
+    align-items: center;
+    max-width: 260px;
+    padding: 3px 9px;
+    font-weight: 500;
+    font-size: 13px;
+    color: var(--text);
+    background: var(--surface1);
+    border: none;
+    border-radius: 6px;
+  }
+
+  .chain-seg.clickable {
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+
+  .chain-seg.clickable:hover {
+    background: var(--surface2);
+    color: var(--blue);
+  }
+
+  .chain-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .chain-pid {
+    flex-shrink: 0;
+    font-family: monospace;
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--subtext0);
+  }
+
+  .chain-seg.subject {
+    color: var(--blue);
+    background: color-mix(in srgb, var(--blue) 14%, transparent);
+  }
+
+  .chain-seg.subject .chain-pid {
+    color: var(--blue);
+    opacity: 0.75;
+  }
+
+  .chain-arrow {
+    color: var(--overlay0);
+  }
+
+  .chain-broken {
+    font-size: 12px;
+    font-style: italic;
+    color: var(--subtext0);
   }
 
   /* Responsive Design */
