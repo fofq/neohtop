@@ -47,13 +47,16 @@ export let column_definitions: Column[] = [
     id: "start_time",
     label: "Start Time",
     visible: false,
-    format: (v) => new Date(v * 1000).toLocaleString(), // v is the time where the process was started (in seconds) from epoch
+    // Kernel pseudo-processes (System Idle etc.) report 0 — no timestamp
+    // means "-", not the epoch
+    format: (v) => (v > 0 ? new Date(v * 1000).toLocaleString() : "-"), // v is the time where the process was started (in seconds) from epoch
   },
   {
     id: "run_time",
     label: "Run Time",
     visible: true,
     format: (v) => {
+      if (v <= 0) return "-"; // no valid start time (PID 0) → no run time
       const seconds = v; // v is the time the process has been running in seconds
       const hours = Math.floor(seconds / 3600);
       const minutes = Math.floor((seconds % 3600) / 60);

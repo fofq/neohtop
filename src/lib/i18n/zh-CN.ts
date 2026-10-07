@@ -277,6 +277,8 @@ const zhCN: Record<TranslationKey, string> = {
   "ports.diagTarget": "目标",
   "ports.diagRun": "重新测试",
   "ports.diagRunning": "正在 Ping…",
+  "ports.received": "已接收",
+  "ports.sent": "已发送",
   "ports.groupByTree": "按进程树分组",
   "ports.collapseAll": "全部折叠",
   "ports.ownAndChildren": "自有 {own} 条 · 子进程 {children} 条",

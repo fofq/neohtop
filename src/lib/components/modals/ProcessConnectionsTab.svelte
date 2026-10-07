@@ -47,15 +47,28 @@
     return 2;
   }
 
-  $: owned = (connections ?? [])
-    .filter((connection) => connection.pid === process.pid)
-    .sort(
-      (a, b) =>
-        stateRank(a.state) - stateRank(b.state) ||
-        a.protocol.localeCompare(b.protocol) ||
-        a.local_port - b.local_port ||
-        a.remote_port - b.remote_port,
-    );
+  /** One row per connection 6-tuple: the macOS lsof collector reports one
+   * record per fd, so a dup'd fd yields two identical rows (the ports
+   * panel's tree view dedups for the same reason). */
+  function dedupByTuple(list: PortConnection[]): PortConnection[] {
+    const seen = new Set<string>();
+    return list.filter((connection) => {
+      const key = connectionKey(connection);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
+
+  $: owned = dedupByTuple(
+    (connections ?? []).filter((connection) => connection.pid === process.pid),
+  ).sort(
+    (a, b) =>
+      stateRank(a.state) - stateRank(b.state) ||
+      a.protocol.localeCompare(b.protocol) ||
+      a.local_port - b.local_port ||
+      a.remote_port - b.remote_port,
+  );
 
   $: hasTraffic = owned.some(
     (connection) => connection.bytes_sent > 0 || connection.bytes_received > 0,

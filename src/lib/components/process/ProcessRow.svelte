@@ -6,7 +6,7 @@
     faChevronDown,
     faChevronRight,
   } from "@fortawesome/free-solid-svg-icons";
-  import { t } from "$lib/i18n";
+  import { t, statusLabel } from "$lib/i18n";
 
   export let process: Process;
   export let columns: Column[];
@@ -93,6 +93,11 @@
             title={process.name}>{process.name}</span
           >
         </div>
+      {:else if column.id === "status"}
+        <!-- The backend status string ("Running"/"Idle"/…) is an
+             enumeration, not prose: translate it like every other
+             enumerated value instead of leaking English on zh locales -->
+        {$statusLabel(process.status)}
       {:else if column.format}
         {@html column.format(process[column.id])}
       {:else}

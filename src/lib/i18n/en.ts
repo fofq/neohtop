@@ -281,6 +281,8 @@ const en = {
   "ports.diagTarget": "Target",
   "ports.diagRun": "Run again",
   "ports.diagRunning": "Pinging…",
+  "ports.received": "Received",
+  "ports.sent": "Sent",
   "ports.groupByTree": "Group by process tree",
   "ports.collapseAll": "Collapse all",
   "ports.ownAndChildren": "{own} own · {children} from children",
