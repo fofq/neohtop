@@ -126,26 +126,24 @@ body {
 }
 
 /* Floating back-to-top button (attached by the backToTop action to long
-   scroll containers). Hidden at the top of a list; after scrolling it
-   fades in at low opacity so it never shouts, and lights up on hover. */
+   scroll containers). Fully hidden at rest; it surfaces only while the
+   user is actively scrolling and fades out again once scrolling pauses. */
 .back-to-top {
   position: absolute;
-  right: 18px;
-  bottom: 18px;
+  right: 16px;
+  bottom: 20px;
   z-index: 40;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   color: var(--text);
   background: var(--surface0);
-  border: 1px solid transparent;
+  border: 1px solid var(--surface1);
   border-radius: 50%;
-  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
-  /* Ghost state at the top of a list: a faint edge hint so the button's
-     resting place is discoverable, without shouting for attention. */
-  opacity: 0.14;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  opacity: 0;
   pointer-events: none;
   transition:
     opacity 0.25s ease,
@@ -153,7 +151,7 @@ body {
 }
 
 .back-to-top.visible {
-  opacity: 0.4;
+  opacity: 0.7;
   cursor: pointer;
   pointer-events: auto;
 }

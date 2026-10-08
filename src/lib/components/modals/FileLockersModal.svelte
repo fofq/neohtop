@@ -9,7 +9,6 @@
     faCircleInfo,
     faXmark,
   } from "@fortawesome/free-solid-svg-icons";
-  import { backToTop } from "$lib/actions/backToTop";
   import { KillProcessModal, Modal, SearchInput } from "$lib/components";
   import { t } from "$lib/i18n";
   import { processStore } from "$lib/stores/index";

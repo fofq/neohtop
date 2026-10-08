@@ -171,6 +171,18 @@ mod platform {
         }
     }
 
+    /// Opens one per-item StartupApproved sub-bucket (Run / Run32 /
+    /// StartupFolder). Task Manager stores the disable flags in these
+    /// sub-buckets — never in the top-level StartupApproved key — so the
+    /// read side must look in the same place write_approved writes to.
+    fn open_bucket(bucket: &str) -> Option<HKEY> {
+        open_key(
+            HKEY_CURRENT_USER,
+            &format!("{}\\{}", APPROVED_PREFIX, bucket),
+            KEY_QUERY_VALUE,
+        )
+    }
+
     /// Writes the StartupApproved flag that toggles an item
     fn write_approved(bucket: &str, name: &str, enabled: bool) -> Result<(), String> {
         let path = format!("{}\\{}", APPROVED_PREFIX, bucket);
@@ -233,6 +245,9 @@ mod platform {
                 continue;
             };
             let mut index = 0u32;
+            // Enumerate into a local batch so the StartupApproved overlay
+            // for this key's bucket can be applied before it merges in.
+            let mut batch: Vec<StartupItem> = Vec::new();
             loop {
                 let mut name = [0u16; 512];
                 let mut name_len = name.len() as u32;
@@ -271,7 +286,7 @@ mod platform {
                     continue;
                 }
                 let tail = key_def.sub.rsplit('\\').next().unwrap_or(key_def.sub);
-                items.push(StartupItem {
+                batch.push(StartupItem {
                     id: format!(
                         "registry|{}|{}|{}",
                         key_def.root_label, key_def.sub, value_name
@@ -287,17 +302,24 @@ mod platform {
             }
             // SAFETY: key is the valid handle from open_key
             unsafe { RegCloseKey(key) };
-        }
 
-        // Overlay Task Manager's disable flags (one HKCU key for all)
-        if let Some(approved) = open_key(HKEY_CURRENT_USER, APPROVED_PREFIX, KEY_QUERY_VALUE) {
-            for item in items.iter_mut() {
-                if item.kind == "registry" {
+            // Overlay this key's disable flags. The bucket follows the
+            // root exactly as set_enabled's write side does (Run32 for the
+            // 32-bit view, Run otherwise); opening the top-level
+            // StartupApproved key here would miss every stored flag.
+            let bucket = if key_def.root_label == "HKLM32" {
+                "Run32"
+            } else {
+                "Run"
+            };
+            if let Some(approved) = open_bucket(bucket) {
+                for item in batch.iter_mut() {
                     item.enabled = !approved_disabled(approved, &item.name);
                 }
+                // SAFETY: approved is the valid handle from open_bucket
+                unsafe { RegCloseKey(approved) };
             }
-            // SAFETY: approved is the valid handle from open_key
-            unsafe { RegCloseKey(approved) };
+            items.extend(batch);
         }
     }
 
@@ -348,14 +370,17 @@ mod platform {
             }
         }
 
-        if let Some(approved) = open_key(HKEY_CURRENT_USER, APPROVED_PREFIX, KEY_QUERY_VALUE) {
+        // The StartupFolder flags live in the StartupFolder sub-bucket
+        // (keyed by file name); the top-level StartupApproved key holds
+        // no per-item values, so querying it always read back as enabled.
+        if let Some(approved) = open_bucket("StartupFolder") {
             for item in items.iter_mut() {
                 if item.kind == "folder" {
                     // StartupFolder flags are keyed by the file's name
                     item.enabled = !approved_disabled(approved, &item.command);
                 }
             }
-            // SAFETY: approved is the valid handle from open_key
+            // SAFETY: approved is the valid handle from open_bucket
             unsafe { RegCloseKey(approved) };
         }
     }
