@@ -116,10 +116,10 @@ impl ProcessMonitor {
                             name: data.name.clone(),
                             command: data.cmd.join(" "),
                             user: data
-                            .user_id
-                            .as_deref()
-                            .map(super::sid_name::friendly_name)
-                            .unwrap_or_else(|| "-".to_string()),
+                                .user_id
+                                .as_deref()
+                                .map(super::sid_name::friendly_name)
+                                .unwrap_or_else(|| "-".to_string()),
                         });
 
                 ProcessInfo {

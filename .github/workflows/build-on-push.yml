@@ -105,7 +105,29 @@ jobs:
         run: npm run build
 
       - name: Cargo Check
-        run: cargo check --manifest-path src-tauri/Cargo.toml
+        shell: bash
+        run: |
+          # A single-line run script executes via sh -c (no pipefail), so a
+          # bare `cargo check | tee` line would report tee's always-zero
+          # exit and swallow compile failures, leaving the annotation step
+          # below dead. Multi-line + explicit pipefail keeps it red.
+          set -o pipefail
+          cargo check --manifest-path src-tauri/Cargo.toml 2>&1 | tee cargo-check.log
+
+      # Maps rustc diagnostics onto check annotations so compile errors on
+      # Linux are readable from the API without job-log access (mirrors the
+      # Windows build job's diagnostic step)
+      - name: Surface cargo check errors as annotations
+        if: failure()
+        shell: bash
+        run: |
+          hits=$(grep -Ei 'error\[E[0-9]+\]|^error:|cannot find|unresolved|expected|mismatched|not found' cargo-check.log | head -20 || true)
+          if [ -z "$hits" ]; then
+            hits=$(tail -8 cargo-check.log)
+          fi
+          while IFS= read -r line; do
+            [ -n "$line" ] && echo "::error::$line"
+          done <<< "$hits"
 
   build-windows:
     name: Build Windows Portable Executable

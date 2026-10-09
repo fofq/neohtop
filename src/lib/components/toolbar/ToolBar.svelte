@@ -15,6 +15,7 @@
     faNetworkWired,
     faSitemap,
     faList,
+    faLayerGroup,
   } from "@fortawesome/free-solid-svg-icons";
   import { t } from "$lib/i18n";
   import { overlayStore } from "$lib/stores/overlay";
@@ -24,8 +25,8 @@
   export let currentPage: number;
   export let totalPages: number;
   export let totalResults: number;
-  /** "flat" shows the paginated list; "tree" groups processes by ppid. */
-  export let viewMode: "flat" | "tree" = "flat";
+  /** "flat" = paginated list; "tree" = grouped by ppid; "app" = grouped by application family. */
+  export let viewMode: "flat" | "tree" | "app" = "flat";
   /** True while any tree subtree is collapsed; flips the toggle action. */
   export let treeCollapsedAny = false;
   /** Collapses everything (nothing collapsed) or expands everything. */
@@ -98,6 +99,14 @@
         </button>
         <button
           class="view-option"
+          class:active={viewMode === "app"}
+          on:click={() => (viewMode = "app")}
+          title={$t("tools.appView")}
+        >
+          <Fa icon={faLayerGroup} />
+        </button>
+        <button
+          class="view-option"
           class:active={viewMode === "flat"}
           on:click={() => (viewMode = "flat")}
           title={$t("tools.flatView")}
@@ -105,7 +114,7 @@
           <Fa icon={faList} />
         </button>
       </div>
-      {#if viewMode === "tree"}
+      {#if viewMode !== "flat"}
         <!-- Collapse/expand-all toggle for the tree; the icon shows the
              action performed, mirroring the ports modal's control -->
         <button
@@ -129,6 +138,9 @@
       {#if viewMode === "tree"}
         <!-- Tree mode flattens hierarchy, so pagination would hide children. -->
         <span class="tree-hint">{$t("tools.treeNoPagination")}</span>
+      {:else if viewMode === "app"}
+        <!-- App mode nests members under their leader, so no pagination. -->
+        <span class="tree-hint">{$t("tools.appNoPagination")}</span>
       {:else}
         <PaginationControls
           bind:itemsPerPage

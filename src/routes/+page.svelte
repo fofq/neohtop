@@ -31,6 +31,7 @@
     sortProcesses,
     withAncestors,
     buildTreeRows,
+    buildAppRows,
   } from "$lib/utils";
   import type { Process, ProcessTreeRow } from "$lib/types";
 
@@ -50,6 +51,7 @@
     processToKill,
     isKilling,
     killTreeCount,
+    killAppCount,
     notice,
     showRestartModal,
     processToRestart,
@@ -63,28 +65,48 @@
   let cachedFilteredProcesses: Process[] = [];
   let cachedSortedProcesses: Process[] = [];
 
-  // "flat" = paginated list (default); "tree" = grouped by ppid, no paging.
-  let viewMode: "flat" | "tree" = "flat";
+  // "flat" = paginated list (default); "tree" = grouped by ppid; "app" =
+  // grouped by application family (Task Manager's "App (N)" rows).
+  let viewMode: "flat" | "tree" | "app" = "flat";
   /**
    * Subtrees collapsed in tree view, keyed by the root-to-node name chain
    * (ProcessTreeRow.path). Name paths survive the PID churn of short-lived
    * child processes, so a collapsed group stays collapsed across refreshes.
    */
   let collapsedPaths = new Set<string>();
+  /** Collapsed app-family leaders in the app view (leader "Name (N)" keys). */
+  let appCollapsedPaths = new Set<string>();
 
   function toggleExpand(path: string) {
-    const next = new Set(collapsedPaths);
+    // Each view tracks its own collapse set; rows in app view carry the
+    // leader's "Name (N)" path, tree/flat carry the root-to-node chain
+    const next = new Set(viewMode === "app" ? appCollapsedPaths : collapsedPaths);
     if (next.has(path)) {
       next.delete(path);
     } else {
       next.add(path);
     }
-    collapsedPaths = next;
+    if (viewMode === "app") {
+      appCollapsedPaths = next;
+    } else {
+      collapsedPaths = next;
+    }
   }
 
   // Collapse-all needs every expandable path, including ones currently
   // hidden behind collapsed nodes, so it walks a fully expanded tree.
   function collapseAllTree() {
+    if (viewMode === "app") {
+      const full = buildAppRows(
+        cachedFilteredProcesses,
+        sortConfig,
+        new Set<string>(),
+      );
+      appCollapsedPaths = new Set(
+        full.filter((row) => row.hasChildren).map((row) => row.path),
+      );
+      return;
+    }
     const full = buildTreeRows(
       visibleTreeProcesses,
       sortConfig,
@@ -97,11 +119,18 @@
   }
 
   function expandAllTree() {
-    collapsedPaths = new Set();
+    if (viewMode === "app") {
+      appCollapsedPaths = new Set();
+    } else {
+      collapsedPaths = new Set();
+    }
   }
 
   function toggleTreeCollapse() {
-    if (collapsedPaths.size > 0) {
+    const anyCollapsed = viewMode === "app"
+      ? appCollapsedPaths.size > 0
+      : collapsedPaths.size > 0;
+    if (anyCollapsed) {
       expandAllTree();
     } else {
       collapseAllTree();
@@ -195,6 +224,8 @@
           collapsedPaths,
           pinnedProcesses,
         )
+      : viewMode === "app"
+      ? buildAppRows(cachedFilteredProcesses, sortConfig, appCollapsedPaths)
       : null;
 
   // The current page is meaningless while paging is off; reset it so
@@ -312,7 +343,9 @@
         bind:isFrozen={$processStore.isFrozen}
         bind:filters
         bind:viewMode
-        treeCollapsedAny={collapsedPaths.size > 0}
+        treeCollapsedAny={
+          viewMode === "app" ? appCollapsedPaths.size > 0 : collapsedPaths.size > 0
+        }
         onToggleTreeCollapse={toggleTreeCollapse}
         {totalPages}
         totalResults={cachedFilteredProcesses.length}
@@ -355,6 +388,7 @@
         onToggleSuspend={processStore.toggleSuspend}
         onKillProcess={processStore.confirmKillProcess}
         onKillTreeProcess={processStore.confirmKillTreeProcess}
+        onKillAppProcess={processStore.confirmKillAppProcess}
         onToggleExpand={toggleExpand}
         onHoverTooltip={(process, event) =>
           hoverCard?.show(process, event.clientX, event.clientY)}
@@ -378,6 +412,7 @@
   show={showConfirmModal}
   process={processToKill}
   treeCount={killTreeCount}
+  appCount={killAppCount}
   {isKilling}
   onClose={processStore.closeConfirmKill}
   onConfirm={processStore.handleConfirmKill}

@@ -19,13 +19,26 @@
    * kill-the-whole-tree confirmation; null = plain single kill.
    */
   export let treeCount: string | null = null;
+  /**
+   * Estimated application-family size shown by the kill-the-whole-app
+   * confirmation; null = not an app-family kill. Takes precedence over
+   * treeCount (the two scopes are mutually exclusive in the store).
+   */
+  export let appCount: string | null = null;
+
+  $: scope = appCount !== null ? "app" : treeCount !== null ? "tree" : "single";
 </script>
 
 <Modal {show} title={$t("modal.confirmTitle")} maxWidth="400px" {onClose}>
   {#if process}
     <div class="confirm-content">
       <p class="confirm-message">
-        {#if treeCount !== null}
+        {#if appCount !== null}
+          <span class="tree-message">
+            <Fa icon={faTriangleExclamation} />
+            {$t("killApp.message", { count: appCount })}
+          </span>
+        {:else if treeCount !== null}
           <span class="tree-message">
             <Fa icon={faTriangleExclamation} />
             {$t("killTree.message", { count: treeCount })}
@@ -47,11 +60,21 @@
             <div class="spinner"></div>
             <span>
               {$t(
-                treeCount !== null ? "killTree.inProgress" : "kill.inProgress",
+                scope === "app"
+                  ? "killApp.inProgress"
+                  : scope === "tree"
+                  ? "killTree.inProgress"
+                  : "kill.inProgress",
               )}
             </span>
           {:else}
-            {$t(treeCount !== null ? "killTree.confirm" : "kill.confirm")}
+            {$t(
+              scope === "app"
+                ? "killApp.confirm"
+                : scope === "tree"
+                ? "killTree.confirm"
+                : "kill.confirm",
+            )}
           {/if}
         </button>
       </div>

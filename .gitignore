@@ -14,3 +14,5 @@ vite.config.ts.timestamp-*
 .run/
 ## 本地工作记录（用户要求不入库）
 .记录/
+## 参考项目源码（本地临时下载，不入库）
+/tmp-source/

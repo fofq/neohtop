@@ -44,6 +44,7 @@ pub use network_ports::{
 pub use process_control::ProcessPriorityInfo;
 pub use process_control::KillTreeResult;
 pub use process_control::DeepKillReport;
+pub use process_control::AppKillResult;
 pub use startup_items::StartupItem;
 pub use process_monitor::ProcessMonitor;
 pub use system_monitor::SystemMonitor;

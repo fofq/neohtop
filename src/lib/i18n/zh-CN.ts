@@ -34,6 +34,7 @@ const zhCN: Record<TranslationKey, string> = {
   // Row context menu
   "contextMenu.endProcess": "结束进程",
   "contextMenu.endProcessTree": "结束进程树",
+  "contextMenu.endProcessApp": "结束整个应用",
 
   // Stats panels
   "stats.cpu": "CPU 使用率",
@@ -139,6 +140,15 @@ const zhCN: Record<TranslationKey, string> = {
   "killTree.confirm": "结束进程树",
   "killTree.inProgress": "正在结束进程树...",
   "killTree.success": "已结束进程树中的 {killed} / {requested} 个进程",
+
+  // Kill the whole application (Task Manager-style "end task")
+  "killApp.message":
+    "确定要结束整个应用吗（共 {count} 个进程）？将结束该应用的进程及其与其同属一个可执行文件的子进程，其他应用不受影响。",
+  "killApp.confirm": "结束整个应用",
+  "killApp.inProgress": "正在结束整个应用...",
+  "killApp.success": "已结束应用中的 {killed} / {requested} 个进程",
+  "killApp.respawns":
+    "检测到 {count} 个进程被看门狗重新拉起（{pids}），可再次执行结束。",
 
   // Restart process modal
   "restart.message":
@@ -542,8 +552,11 @@ const zhCN: Record<TranslationKey, string> = {
   "startup.trigger.registration": "注册时",
   "tools.viewMode": "视图模式",
   "tools.treeView": "树形视图",
+  "tools.appView": "应用视图",
   "tools.flatView": "平铺视图",
   "tools.treeNoPagination": "树形视图展示完整层级结构，已禁用分页。",
+  "tools.appNoPagination":
+    "应用视图按应用聚合多进程程序（同任务管理器的分组），已禁用分页。",
   "tools.collapse": "折叠",
   "tools.expand": "展开",
   "tools.collapseAll": "全部折叠",

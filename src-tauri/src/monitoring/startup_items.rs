@@ -348,6 +348,16 @@ mod platform {
                 if !path.is_file() {
                     continue;
                 }
+                // desktop.ini is the folder-appearance config Windows keeps in
+                // many directories, not an autostart entry; it runs nothing
+                // at logon and only pollutes the list ("desktop")
+                let file_name = path
+                    .file_name()
+                    .map(|s| s.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                if file_name.eq_ignore_ascii_case("desktop.ini") {
+                    continue;
+                }
                 let name = path
                     .file_stem()
                     .map(|s| s.to_string_lossy().into_owned())
@@ -359,10 +369,7 @@ mod platform {
                     id: format!("folder|{}", path.to_string_lossy()),
                     kind: "folder".to_string(),
                     name,
-                    command: path
-                        .file_name()
-                        .map(|s| s.to_string_lossy().into_owned())
-                        .unwrap_or_default(),
+                    command: file_name,
                     location: dir.to_string_lossy().into_owned(),
                     enabled: true,
                     detail: String::new(),

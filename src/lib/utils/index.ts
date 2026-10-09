@@ -337,6 +337,29 @@ export function computeNameColumnWidth(
 }
 
 /**
+ * Reports whether a ppid edge parent→child is stale. The kernel never
+ * rewrites PEPID after the original parent exits, so a recycled PID (or a
+ * cross-session "parent" that adopted the child) points at an unrelated
+ * process. witr's ancestry guards: a real parent started no later than its
+ * child, and a forked process inherits its session. Edges with an unknown
+ * start time (0) or session are kept — they cannot be judged.
+ */
+function isStaleEdge(parent: Process, child: Process): boolean {
+  if (
+    parent.start_time > 0 &&
+    child.start_time > 0 &&
+    parent.start_time > child.start_time
+  ) {
+    return true;
+  }
+  return (
+    parent.session_id !== undefined &&
+    child.session_id !== undefined &&
+    parent.session_id !== child.session_id
+  );
+}
+
+/**
  * Expands a filtered process list with the ancestor chain of every hit so
  * the tree view keeps parent rows attached above matching children.
  * Cycles (self-referencing ppids) and missing parents are tolerated.
@@ -351,7 +374,10 @@ export function withAncestors(matched: Process[], all: Process[]): Process[] {
     const visited = new Set<number>([process.pid]);
     for (;;) {
       const parent = byPid.get(current.ppid);
-      if (!parent || visited.has(parent.pid)) break;
+      // A stale edge (recycled PID / cross-session adoption) means the
+      // chain above it is not the real ancestry — stop at the child
+      if (!parent || visited.has(parent.pid) || isStaleEdge(parent, current))
+        break;
       visited.add(parent.pid);
       visible.set(parent.pid, parent);
       current = parent;
@@ -384,10 +410,16 @@ export function buildTreeRows(
   const childrenOf = new Map<number | null, Process[]>();
   for (const process of visible) {
     const parent = byPid.get(process.ppid);
-    // Pinned processes are re-rooted so they always lead the list
+    // Pinned processes are re-rooted so they always lead the list; a stale
+    // ppid edge (recycled or cross-session parent) is rooted the same way
     const hoisted = pinOrder.has(process.pid);
     const key =
-      !hoisted && parent && parent.pid !== process.pid ? process.ppid : null;
+      !hoisted &&
+      parent &&
+      parent.pid !== process.pid &&
+      !isStaleEdge(parent, process)
+        ? process.ppid
+        : null;
     const siblings = childrenOf.get(key);
     if (siblings) {
       siblings.push(process);
@@ -462,10 +494,15 @@ export function countProcessTreeSize(
   if (!processes.some((process) => process.pid === pid)) {
     return null;
   }
+  const byPid = new Map(processes.map((p) => [p.pid, p]));
   const childrenOf = new Map<number, number[]>();
   for (const process of processes) {
-    // ppid 0 means "no parent recorded" and must never anchor a subtree
+    // ppid 0 means "no parent recorded" and must never anchor a subtree;
+    // a stale edge (recycled/cross-session parent) never does either
     if (process.ppid <= 0) continue;
+    const parent = byPid.get(process.ppid);
+    if (parent && parent.pid !== process.pid && isStaleEdge(parent, process))
+      continue;
     const siblings = childrenOf.get(process.ppid);
     if (siblings) {
       siblings.push(process.pid);
@@ -487,6 +524,193 @@ export function countProcessTreeSize(
     }
   }
   return count;
+}
+
+/**
+ * Application scope of `pid`, Task Manager's "end task" semantics: the
+ * target plus its descendants that share the target's executable and
+ * session (root path, case-insensitive; the name when the root is
+ * unknown). A descendant that runs as a *different* executable is a
+ * boundary — it and the rest of the session's software are never part
+ * of the application.
+ */
+export function appFamilyOf(processes: Process[], pid: number): Process[] {
+  const target = processes.find((p) => p.pid === pid);
+  if (!target) return [];
+  const byPid = new Map(processes.map((p) => [p.pid, p]));
+  const exeKeyOf = (p: Process) =>
+    (p.root.trim() ? p.root : p.name).toLowerCase();
+  const targetKey = exeKeyOf(target);
+
+  // Stale/cross-session-guarded children map (the same edges buildTreeRows keeps)
+  const childrenOf = new Map<number, number[]>();
+  for (const p of processes) {
+    if (p.ppid <= 0) continue;
+    const parent = byPid.get(p.ppid);
+    if (parent && parent.pid !== p.pid && isStaleEdge(parent, p)) continue;
+    const siblings = childrenOf.get(p.ppid);
+    if (siblings) {
+      siblings.push(p.pid);
+    } else {
+      childrenOf.set(p.ppid, [p.pid]);
+    }
+  }
+
+  // Descend only through nodes that keep the application's executable
+  const out: Process[] = [target];
+  const seen = new Set<number>([pid]);
+  const queue: number[] = [pid];
+  while (queue.length > 0) {
+    const current = queue.pop()!;
+    for (const childPid of childrenOf.get(current) ?? []) {
+      if (seen.has(childPid)) continue;
+      const child = byPid.get(childPid);
+      if (!child) continue;
+      const sameSession =
+        target.session_id === undefined ||
+        child.session_id === undefined ||
+        child.session_id === target.session_id;
+      if (exeKeyOf(child) !== targetKey || !sameSession) continue;
+      seen.add(childPid);
+      out.push(child);
+      queue.push(childPid);
+    }
+  }
+  return out;
+}
+
+/**
+ * Sizes the application scope of `pid` from the snapshot (the estimate
+ * the kill-the-app confirmation shows: target plus same-executable
+ * descendants); null when the target is missing.
+ */
+export function countAppFamilySize(
+  processes: Process[],
+  pid: number,
+): number | null {
+  const family = appFamilyOf(processes, pid);
+  return family.length > 0 ? family.length : null;
+}
+
+/**
+ * Builds the app-group view rows: every application (shared executable
+ * within a session, Task Manager's "App (N)" rows) renders as a leader
+ * row — the oldest-starting member carrying the application's summed
+ * CPU/memory and a "(N)" name suffix — with the remaining members nested
+ * one level below. Single-member applications render as plain root rows.
+ * The leader row keeps the leader's real PID, so row actions (details,
+ * kill, kill-app) target the supervising process. Collapse state is
+ * shared with the tree view, keyed by the leader's name.
+ */
+export function buildAppRows(
+  visible: Process[],
+  sortConfig: SortConfig,
+  collapsedPaths: Set<string>,
+): ProcessTreeRow[] {
+  const byKey = new Map<string, Process[]>();
+  for (const process of visible) {
+    // Application identity = executable + session. The launcher that
+    // started the app (explorer.exe, a service host, ...) is the app's
+    // PARENT, never a member, so no launcher's co-applications bleed
+    // into its row; shared instances (svchost, dotnet, ...) keep one
+    // row per session.
+    const exeKey = (
+      process.root.trim() ? process.root : process.name
+    ).toLowerCase();
+    const key = `${process.session_id ?? 0}|${exeKey}`;
+    const members = byKey.get(key);
+    if (members) {
+      members.push(process);
+    } else {
+      byKey.set(key, [process]);
+    }
+  }
+
+  // start_time 0 means "unknown"; those members sort last in leader picks
+  const knownTime = (p: Process) =>
+    p.start_time > 0 ? p.start_time : Number.MAX_SAFE_INTEGER;
+
+  interface AppGroup {
+    leader: Process;
+    members: Process[]; // everyone except the leader
+    path: string;
+  }
+  const groups: AppGroup[] = [];
+  for (const members of byKey.values()) {
+    const leader = members.reduce((a, b) =>
+      knownTime(b) < knownTime(a) ? b : a,
+    );
+    const rest = members.filter((m) => m.pid !== leader.pid);
+    const path =
+      rest.length > 0 ? `${leader.name} (${rest.length + 1})` : leader.name;
+    groups.push({ leader, members: rest, path });
+  }
+
+  // Leader rows (and the plain singletons) share the root level, sorted
+  // by the active column using the leader's aggregated values
+  groups.sort((a, b) =>
+    compareProcesses(leaderAgg(a), leaderAgg(b), sortConfig),
+  );
+
+  const rows: ProcessTreeRow[] = [];
+  for (const group of groups) {
+    if (group.members.length === 0) {
+      rows.push({
+        process: group.leader,
+        path: group.leader.name,
+        depth: 0,
+        hasChildren: false,
+        expanded: false,
+      });
+      continue;
+    }
+    const row = {
+      ...group.leader,
+      name: group.path,
+      cpu_usage:
+        group.members.reduce((s, m) => s + m.cpu_usage, 0) +
+        group.leader.cpu_usage,
+      memory_usage:
+        group.members.reduce((s, m) => s + m.memory_usage, 0) +
+        group.leader.memory_usage,
+    };
+    const expanded = !collapsedPaths.has(group.path);
+    rows.push({
+      process: row,
+      path: group.path,
+      depth: 0,
+      hasChildren: true,
+      expanded,
+    });
+    if (expanded) {
+      const sortedMembers = [...group.members].sort((a, b) =>
+        compareProcesses(a, b, sortConfig),
+      );
+      for (const member of sortedMembers) {
+        rows.push({
+          process: member,
+          path: `${group.path}\u0001${member.name}`,
+          depth: 1,
+          hasChildren: false,
+          expanded: false,
+        });
+      }
+    }
+  }
+  return rows;
+
+  function leaderAgg(group: AppGroup): Process {
+    return {
+      ...group.leader,
+      name: group.path,
+      cpu_usage:
+        group.members.reduce((s, m) => s + m.cpu_usage, 0) +
+        group.leader.cpu_usage,
+      memory_usage:
+        group.members.reduce((s, m) => s + m.memory_usage, 0) +
+        group.leader.memory_usage,
+    };
+  }
 }
 
 // Backend error fragments that indicate the operation failed for lack of

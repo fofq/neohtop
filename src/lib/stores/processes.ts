@@ -3,7 +3,11 @@ import type { PerformanceSample, Process, SystemStats } from "$lib/types";
 import { invoke } from "@tauri-apps/api/core";
 import { t } from "$lib/i18n";
 import { settingsStore } from "./settings";
-import { countProcessTreeSize, withElevationHint } from "$lib/utils";
+import {
+  countProcessTreeSize,
+  countAppFamilySize,
+  withElevationHint,
+} from "$lib/utils";
 
 interface ProcessStore {
   processes: Process[];
@@ -23,6 +27,11 @@ interface ProcessStore {
    * the root is missing from the snapshot); null = plain single kill.
    */
   killTreeCount: string | null;
+  /**
+   * Estimated application-family size for the kill-app confirmation ("N",
+   * or "1+" when the target is missing); null = not an app-family kill.
+   */
+  killAppCount: string | null;
   /** Transient success notice (e.g. the kill-tree result); auto-clears. */
   notice: string | null;
   showRestartModal: boolean;
@@ -84,6 +93,7 @@ const initialState: ProcessStore = {
   processToKill: null,
   isKilling: false,
   killTreeCount: null,
+  killAppCount: null,
   notice: null,
   showRestartModal: false,
   processToRestart: null,
@@ -312,6 +322,49 @@ function createProcessStore() {
     }
   };
 
+  // Kills the whole application of pid (Task Manager's "end task").
+  // The backend resolves the application (the target plus its
+  // same-executable descendants) and reports requested/killed plus any
+  // PIDs a supervisor relaunched in the brief re-scan; those are surfaced
+  // as a follow-on notice, not chased automatically.
+  const killAppProcess = async (pid: number) => {
+    try {
+      update((state) => ({ ...state, isKilling: true }));
+      const result = await invoke<{
+        requested: number;
+        killed: number;
+        respawns: number[];
+      }>("kill_app_family", { pid });
+      if (result.killed === 0) {
+        throw new Error("Failed to kill application");
+      }
+      // showNotice replaces the previous notice, so the kill tally and the
+      // respawn follow-up are merged into one message
+      let message = get(t)("killApp.success", {
+        killed: result.killed,
+        requested: result.requested,
+      });
+      if (result.respawns.length > 0) {
+        message += ` ${get(t)("killApp.respawns", {
+          count: result.respawns.length,
+          pids: result.respawns
+            .slice(0, 4)
+            .join(", ")
+            .concat(result.respawns.length > 4 ? ", …" : ""),
+        })}`;
+      }
+      showNotice(message);
+      await getProcesses();
+    } catch (e: unknown) {
+      update((state) => ({
+        ...state,
+        error: withElevationHint(e instanceof Error ? e.message : String(e)),
+      }));
+    } finally {
+      update((state) => ({ ...state, isKilling: false }));
+    }
+  };
+
   const restartProcess = async (pid: number) => {
     try {
       update((state) => ({ ...state, isRestarting: true }));
@@ -437,6 +490,7 @@ function createProcessStore() {
       processToKill: process,
       showConfirmModal: true,
       killTreeCount: null,
+      killAppCount: null,
     }));
   };
 
@@ -451,6 +505,23 @@ function createProcessStore() {
         showConfirmModal: true,
         // A root missing from the snapshot gets an open-ended count
         killTreeCount: treeSize === null ? "1+" : String(treeSize),
+        killAppCount: null,
+      };
+    });
+  };
+
+  // Same confirm modal as the plain kill, switched to the app-family
+  // warning by the estimated family size taken from the current snapshot
+  const confirmKillAppProcess = (process: Process) => {
+    update((state) => {
+      const size = countAppFamilySize(state.processes, process.pid);
+      return {
+        ...state,
+        processToKill: process,
+        showConfirmModal: true,
+        killTreeCount: null,
+        // A target missing from the snapshot gets an open-ended count
+        killAppCount: size === null ? "1+" : String(size),
       };
     });
   };
@@ -461,6 +532,7 @@ function createProcessStore() {
       showConfirmModal: false,
       processToKill: null,
       killTreeCount: null,
+      killAppCount: null,
     }));
   };
 
@@ -482,7 +554,9 @@ function createProcessStore() {
     }
 
     try {
-      if (currentState?.killTreeCount) {
+      if (currentState?.killAppCount) {
+        await killAppProcess(processToKill.pid);
+      } else if (currentState?.killTreeCount) {
         await killProcessTree(processToKill.pid);
       } else {
         await killProcess(processToKill.pid);
@@ -493,6 +567,7 @@ function createProcessStore() {
         showConfirmModal: false,
         processToKill: null,
         killTreeCount: null,
+        killAppCount: null,
       }));
     }
   };
@@ -553,6 +628,7 @@ function createProcessStore() {
     showNotice,
     getProcesses,
     killProcess,
+    killAppProcess,
     restartProcess,
     toggleSuspend,
     toggleSort,
@@ -564,6 +640,7 @@ function createProcessStore() {
     closeProcessDetails,
     confirmKillProcess,
     confirmKillTreeProcess,
+    confirmKillAppProcess,
     closeConfirmKill,
     handleConfirmKill,
     confirmRestartProcess,

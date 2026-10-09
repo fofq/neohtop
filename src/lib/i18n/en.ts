@@ -32,6 +32,7 @@ const en = {
   // Row context menu
   "contextMenu.endProcess": "End Process",
   "contextMenu.endProcessTree": "End Process Tree",
+  "contextMenu.endProcessApp": "End Application",
 
   // Stats panels
   "stats.cpu": "CPU Usage",
@@ -138,6 +139,15 @@ const en = {
   "killTree.confirm": "End Process Tree",
   "killTree.inProgress": "Ending process tree...",
   "killTree.success": "Ended {killed} of {requested} processes in the tree",
+
+  // Kill the whole application (Task Manager-style "end task")
+  "killApp.message":
+    "Are you sure you want to end this entire application ({count} processes)? The application's processes and any of its children sharing its executable will be ended. Other applications are not affected.",
+  "killApp.confirm": "End Application",
+  "killApp.inProgress": "Ending application...",
+  "killApp.success": "Ended {killed} of {requested} application processes",
+  "killApp.respawns":
+    "Detected {count} process(es) relaunched by a supervisor ({pids}); you can run End Application again.",
 
   // Restart process modal
   "restart.message":
@@ -552,9 +562,12 @@ const en = {
   "startup.trigger.registration": "At registration",
   "tools.viewMode": "View mode",
   "tools.treeView": "Tree view",
+  "tools.appView": "App view",
   "tools.flatView": "Flat view",
   "tools.treeNoPagination":
     "Tree view shows the full hierarchy, so pagination is disabled.",
+  "tools.appNoPagination":
+    "App view groups multi-process programs like Task Manager does, so pagination is disabled.",
   "tools.collapse": "Collapse",
   "tools.expand": "Expand",
   "tools.collapseAll": "Collapse all",
