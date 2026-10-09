@@ -24,6 +24,8 @@ pub(crate) struct ProcessData {
     pub ppid: Option<u32>,
     /// Environment variables
     pub environ: Vec<String>,
+    /// Executable path (empty when unavailable, e.g. access denied)
+    pub exe: String,
     /// Root directory of the process
     pub root: String,
     /// Virtual memory usage in bytes
@@ -74,6 +76,8 @@ pub struct ProcessInfo {
     pub threads: Option<u32>,
     /// Environment variables
     pub environ: Vec<String>,
+    /// Executable path (empty when unavailable, e.g. access denied)
+    pub exe: String,
     /// Root directory of the process
     pub root: String,
     /// Virtual memory usage in bytes

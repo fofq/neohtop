@@ -71,28 +71,35 @@
   // hits lead the flat list regardless of the sorted column.
   let searchTierMap = new Map<number, SearchTier>();
 
-  // "flat" = paginated list (default); "tree" = grouped by ppid; "app" =
-  // grouped by application family (Task Manager's "App (N)" rows).
-  let viewMode: "flat" | "tree" | "app" = "flat";
+  // "flat" = paginated list (default); "tree" = grouped view, either by
+  // ppid lineage or by application family (behavior.treeGrouping).
+  let viewMode: "flat" | "tree" = "flat";
   /**
-   * Subtrees collapsed in tree view, keyed by the root-to-node name chain
-   * (ProcessTreeRow.path). Name paths survive the PID churn of short-lived
-   * child processes, so a collapsed group stays collapsed across refreshes.
+   * Subtrees collapsed in the structure grouping, keyed by the
+   * root-to-node name chain (ProcessTreeRow.path). Name paths survive the
+   * PID churn of short-lived child processes, so a collapsed group stays
+   * collapsed across refreshes.
    */
   let collapsedPaths = new Set<string>();
-  /** Collapsed app-family leaders in the app view (leader "Name (N)" keys). */
+  /** Collapsed app-group leaders, keyed by the stable "app:session|exe"
+   * identity — never the "Name (N)" display name, whose live count would
+   * re-expand collapsed groups on every member churn. */
   let appCollapsedPaths = new Set<string>();
+  /** Grouping rule of the tree view (persisted behavior setting). */
+  $: treeGrouping = $settingsStore.behavior.treeGrouping;
 
   function toggleExpand(path: string) {
-    // Each view tracks its own collapse set; rows in app view carry the
-    // leader's "Name (N)" path, tree/flat carry the root-to-node chain
-    const next = new Set(viewMode === "app" ? appCollapsedPaths : collapsedPaths);
+    // Each grouping tracks its own collapse set; app-group rows carry the
+    // stable "app:..." identity, structure rows the root-to-node chain
+    const next = new Set(
+      treeGrouping === "app" ? appCollapsedPaths : collapsedPaths,
+    );
     if (next.has(path)) {
       next.delete(path);
     } else {
       next.add(path);
     }
-    if (viewMode === "app") {
+    if (treeGrouping === "app") {
       appCollapsedPaths = next;
     } else {
       collapsedPaths = next;
@@ -102,7 +109,7 @@
   // Collapse-all needs every expandable path, including ones currently
   // hidden behind collapsed nodes, so it walks a fully expanded tree.
   function collapseAllTree() {
-    if (viewMode === "app") {
+    if (treeGrouping === "app") {
       const full = buildAppRows(
         cachedFilteredProcesses,
         sortConfig,
@@ -125,7 +132,7 @@
   }
 
   function expandAllTree() {
-    if (viewMode === "app") {
+    if (treeGrouping === "app") {
       appCollapsedPaths = new Set();
     } else {
       collapsedPaths = new Set();
@@ -133,9 +140,10 @@
   }
 
   function toggleTreeCollapse() {
-    const anyCollapsed = viewMode === "app"
-      ? appCollapsedPaths.size > 0
-      : collapsedPaths.size > 0;
+    const anyCollapsed =
+      treeGrouping === "app"
+        ? appCollapsedPaths.size > 0
+        : collapsedPaths.size > 0;
     if (anyCollapsed) {
       expandAllTree();
     } else {
@@ -223,24 +231,25 @@
     currentPage * itemsPerPage,
   );
 
-  // Tree view: search/filter hits keep their ancestor chain visible, sort
-  // order applies to siblings within each level (pinned processes are
-  // hoisted to the top of the root level), and pagination is off.
+  // Grouped views: search/filter hits keep their ancestor chain visible
+  // (structure grouping), sort order applies to siblings within each level
+  // (pinned processes are hoisted to the top of the root level), and
+  // pagination is off in both groupings.
   let treeRows: ProcessTreeRow[] | null = null;
   $: visibleTreeProcesses =
-    viewMode === "tree"
+    viewMode === "tree" && treeGrouping === "structure"
       ? withAncestors(cachedFilteredProcesses, processes)
       : [];
   $: treeRows =
     viewMode === "tree"
-      ? buildTreeRows(
-          visibleTreeProcesses,
-          sortConfig,
-          collapsedPaths,
-          pinnedProcesses,
-        )
-      : viewMode === "app"
-      ? buildAppRows(cachedFilteredProcesses, sortConfig, appCollapsedPaths)
+      ? treeGrouping === "app"
+        ? buildAppRows(cachedFilteredProcesses, sortConfig, appCollapsedPaths)
+        : buildTreeRows(
+            visibleTreeProcesses,
+            sortConfig,
+            collapsedPaths,
+            pinnedProcesses,
+          )
       : null;
 
   // The current page is meaningless while paging is off; reset it so
@@ -358,9 +367,9 @@
         bind:isFrozen={$processStore.isFrozen}
         bind:filters
         bind:viewMode
-        treeCollapsedAny={
-          viewMode === "app" ? appCollapsedPaths.size > 0 : collapsedPaths.size > 0
-        }
+        treeCollapsedAny={treeGrouping === "app"
+          ? appCollapsedPaths.size > 0
+          : collapsedPaths.size > 0}
         onToggleTreeCollapse={toggleTreeCollapse}
         {totalPages}
         totalResults={cachedFilteredProcesses.length}

@@ -1463,7 +1463,9 @@
         name: process.name,
         user: process.user || null,
         command: process.command || null,
-        exe: process.root || null,
+        // The real executable path — `root` is the cwd's drive root on
+        // Windows ("/" on Linux), never the exe
+        exe: process.exe || null,
         start_time: process.start_time,
         run_time_seconds: process.run_time,
         memory_bytes: process.memory_usage,

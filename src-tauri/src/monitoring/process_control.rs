@@ -178,6 +178,26 @@ pub struct AppKillResult {
 /// wrong thing, and refusing is cheaper than mass-killing
 const MAX_APP_KILL_TARGETS: usize = 512;
 
+/// Executable identity key of a process: the exe path when sysinfo could
+/// read one (non-empty), else the process name, lowercased. `exe()` must
+/// be used here — `root()` is the cwd's drive root on Windows ("/" on
+/// Linux) and would collapse every same-drive process onto one key. The
+/// frontend mirrors this exact `exe || name` fallback in `appFamilyOf`/
+/// `buildAppRows`, so the confirmation-dialog count always equals the
+/// backend kill set.
+fn exe_identity_of(process: &sysinfo::Process) -> String {
+    let exe = process
+        .exe()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    if exe.trim().is_empty() {
+        process.name().to_string_lossy().into_owned()
+    } else {
+        exe
+    }
+    .to_lowercase()
+}
+
 /// Kills the entire application of `pid` — the "End Application" equivalent
 ///
 /// The scope is deliberately narrow: the target plus its descendants that
@@ -219,31 +239,14 @@ pub fn kill_app_family(sys: &mut sysinfo::System, pid: u32) -> Result<AppKillRes
     // at all — so ending a shared launcher such as explorer.exe never
     // drags the user's other software down with it. The session check
     // keeps the closure inside the target's session as well.
-    let target_exe_key = {
-        let root = target
-            .root()
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        if root.trim().is_empty() {
-            target.name().to_string_lossy().into_owned()
-        } else {
-            root
-        }
-        .to_lowercase()
-    };
+    let target_exe_key = exe_identity_of(target);
     let target_session = target.session_id().map(|s| s.as_u32());
 
     let children_of = guarded_children_of(sys);
     let exe_key_of: HashMap<u32, String> = sys
         .processes()
         .iter()
-        .map(|(p, process)| {
-            let exe = process
-                .root()
-                .map(|r| r.to_string_lossy().into_owned())
-                .unwrap_or_else(|| process.name().to_string_lossy().into_owned());
-            (p.as_u32(), exe.to_lowercase())
-        })
+        .map(|(p, process)| (p.as_u32(), exe_identity_of(process)))
         .collect();
     let session_of: HashMap<u32, Option<u32>> = sys
         .processes()
@@ -326,12 +329,7 @@ pub fn kill_app_family(sys: &mut sysinfo::System, pid: u32) -> Result<AppKillRes
                     return false;
                 }
             }
-            let exe = process
-                .root()
-                .map(|r| r.to_string_lossy().into_owned())
-                .unwrap_or_else(|| process.name().to_string_lossy().into_owned())
-                .to_lowercase();
-            exe == target_exe_key
+            exe_identity_of(process) == target_exe_key
         })
         .map(|(child, _)| child.as_u32())
         .collect();

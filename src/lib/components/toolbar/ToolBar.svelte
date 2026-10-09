@@ -12,6 +12,7 @@
   import {
     faCompressArrowsAlt,
     faExpandArrowsAlt,
+    faCodeBranch,
     faNetworkWired,
     faSitemap,
     faList,
@@ -19,14 +20,17 @@
   } from "@fortawesome/free-solid-svg-icons";
   import { t } from "$lib/i18n";
   import { overlayStore } from "$lib/stores/overlay";
+  import { settingsStore } from "$lib/stores/settings";
+  import type { TreeGrouping } from "$lib/types";
 
   export let searchTerm: string;
   export let itemsPerPage: number;
   export let currentPage: number;
   export let totalPages: number;
   export let totalResults: number;
-  /** "flat" = paginated list; "tree" = grouped by ppid; "app" = grouped by application family. */
-  export let viewMode: "flat" | "tree" | "app" = "flat";
+  /** "flat" = paginated list; "tree" = grouped view (structure or app
+   * grouping, per behavior.treeGrouping). */
+  export let viewMode: "flat" | "tree" = "flat";
   /** True while any tree subtree is collapsed; flips the toggle action. */
   export let treeCollapsedAny = false;
   /** Collapses everything (nothing collapsed) or expands everything. */
@@ -73,6 +77,14 @@
   $: isAnyOverlayOpen =
     $overlayStore !== null && TOOLBAR_OVERLAYS.includes($overlayStore);
   $: activeOverlayType = $overlayStore;
+  /** Grouping rule of the tree view; persisted in behavior settings. */
+  $: treeGrouping = $settingsStore.behavior.treeGrouping;
+
+  function setTreeGrouping(grouping: TreeGrouping) {
+    settingsStore.updateConfig({
+      behavior: { ...$settingsStore.behavior, treeGrouping: grouping },
+    });
+  }
 </script>
 
 <div class="toolbar">
@@ -99,14 +111,6 @@
         </button>
         <button
           class="view-option"
-          class:active={viewMode === "app"}
-          on:click={() => (viewMode = "app")}
-          title={$t("tools.appView")}
-        >
-          <Fa icon={faLayerGroup} />
-        </button>
-        <button
-          class="view-option"
           class:active={viewMode === "flat"}
           on:click={() => (viewMode = "flat")}
           title={$t("tools.flatView")}
@@ -114,9 +118,35 @@
           <Fa icon={faList} />
         </button>
       </div>
-      {#if viewMode !== "flat"}
-        <!-- Collapse/expand-all toggle for the tree; the icon shows the
-             action performed, mirroring the ports modal's control -->
+      {#if viewMode === "tree"}
+        <!-- Grouping rule inside the tree view: ppid lineage vs app family
+             (Task Manager-style "Name (N)" rows) -->
+        <div
+          class="view-toggle grouping-toggle"
+          role="group"
+          aria-label={$t("tools.grouping")}
+        >
+          <button
+            class="view-option"
+            class:active={treeGrouping === "structure"}
+            on:click={() => setTreeGrouping("structure")}
+            title={$t("tools.groupStructure")}
+            aria-pressed={treeGrouping === "structure"}
+          >
+            <Fa icon={faCodeBranch} />
+          </button>
+          <button
+            class="view-option"
+            class:active={treeGrouping === "app"}
+            on:click={() => setTreeGrouping("app")}
+            title={$t("tools.groupApp")}
+            aria-pressed={treeGrouping === "app"}
+          >
+            <Fa icon={faLayerGroup} />
+          </button>
+        </div>
+        <!-- Collapse/expand-all toggle; the icon shows the action
+             performed, mirroring the ports modal's control -->
         <button
           class="tree-collapse-toggle"
           on:click={onToggleTreeCollapse}
@@ -136,11 +166,13 @@
 
     <div class:hidden={isAnyOverlayOpen && activeOverlayType !== "pagination"}>
       {#if viewMode === "tree"}
-        <!-- Tree mode flattens hierarchy, so pagination would hide children. -->
-        <span class="tree-hint">{$t("tools.treeNoPagination")}</span>
-      {:else if viewMode === "app"}
-        <!-- App mode nests members under their leader, so no pagination. -->
-        <span class="tree-hint">{$t("tools.appNoPagination")}</span>
+        <!-- Grouped modes flatten rows into one list, so pagination would
+             hide children/members. -->
+        <span class="tree-hint">
+          {treeGrouping === "app"
+            ? $t("tools.appGroupHint")
+            : $t("tools.treeNoPagination")}
+        </span>
       {:else}
         <PaginationControls
           bind:itemsPerPage
@@ -278,6 +310,12 @@
     background: var(--blue);
   }
 
+  /* Icon-only grouping rule inside the tree view, between the view switch
+     and the collapse-all button; same look as the view switch */
+  .grouping-toggle {
+    margin-left: 6px;
+  }
+
   /* Icon-only collapse/expand-all beside the view switch, matching the
      ports modal's control; only rendered in tree view */
   .tree-collapse-toggle {
@@ -310,5 +348,10 @@
     font-size: 12px;
     color: var(--subtext0);
     white-space: nowrap;
+    /* Shrink with an ellipsis instead of forcing the toolbar to wrap to a
+       second row when the window gets tight */
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 </style>

@@ -10,6 +10,8 @@ export interface Process {
   command: string;
   threads?: number;
   environ: string[];
+  /** Executable path; empty when the read was denied (elevated/protected). */
+  exe: string;
   root: string;
   virtual_memory: number;
   start_time: number;
@@ -74,6 +76,11 @@ export type Language = "auto" | "en" | "zh-CN";
 /** View mode of the network ports modal. */
 export type PortsViewMode = "flat" | "grouped" | "tree";
 
+/** Grouping rule of the process tree view: "structure" nests rows by
+ * parent/child lineage, "app" aggregates same-executable processes of a
+ * session into one "Name (N)" row (Task Manager-style app grouping). */
+export type TreeGrouping = "structure" | "app";
+
 export interface AppConfig {
   language: Language;
   appearance: {
@@ -89,6 +96,8 @@ export interface AppConfig {
     itemsPerPage: number;
     refreshRate: number;
     defaultStatusFilter: string;
+    /** Grouping rule of the process tree view. */
+    treeGrouping: TreeGrouping;
     /** Last selected network ports modal view mode. */
     portsViewMode: PortsViewMode;
     /** Favorite ports of the network ports modal, keyed "protocol:local_port". */

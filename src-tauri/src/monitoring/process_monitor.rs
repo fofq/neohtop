@@ -86,6 +86,14 @@ impl ProcessMonitor {
                     status: process.status(),
                     ppid: process.parent().map(|p| p.as_u32()),
                     environ: os_string_vec_to_string_vec(&process.environ()),
+                    // The executable path — NOT `root()`, which is the
+                    // cwd's drive root on Windows ("/" on Linux) and
+                    // useless as an exe identity. Empty when the read is
+                    // denied (elevated/protected processes).
+                    exe: process
+                        .exe()
+                        .map(|p| p.to_string_lossy().into_owned())
+                        .unwrap_or_default(),
                     root: process
                         .root()
                         .map(|p| p.to_string_lossy().into_owned())
@@ -133,6 +141,7 @@ impl ProcessMonitor {
                     command: cached_info.command.clone(),
                     threads: None,
                     environ: data.environ,
+                    exe: data.exe,
                     root: data.root,
                     virtual_memory: data.virtual_memory,
                     start_time: data.start_time,

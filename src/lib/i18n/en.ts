@@ -562,12 +562,14 @@ const en = {
   "startup.trigger.registration": "At registration",
   "tools.viewMode": "View mode",
   "tools.treeView": "Tree view",
-  "tools.appView": "App view",
   "tools.flatView": "Flat view",
+  "tools.grouping": "Tree grouping",
+  "tools.groupStructure": "By process lineage",
+  "tools.groupApp": "By application",
   "tools.treeNoPagination":
     "Tree view shows the full hierarchy, so pagination is disabled.",
-  "tools.appNoPagination":
-    "App view groups multi-process programs like Task Manager does, so pagination is disabled.",
+  "tools.appGroupHint":
+    "Processes are grouped by application, so pagination is disabled.",
   "tools.collapse": "Collapse",
   "tools.expand": "Expand",
   "tools.collapseAll": "Collapse all",

@@ -595,17 +595,18 @@ export function countProcessTreeSize(
 /**
  * Application scope of `pid`, Task Manager's "end task" semantics: the
  * target plus its descendants that share the target's executable and
- * session (root path, case-insensitive; the name when the root is
- * unknown). A descendant that runs as a *different* executable is a
- * boundary — it and the rest of the session's software are never part
- * of the application.
+ * session (exe path, case-insensitive; the name when the exe read was
+ * denied — mirroring the backend's kill-app-family fallback exactly).
+ * A descendant that runs as a *different* executable is a boundary — it
+ * and the rest of the session's software are never part of the
+ * application.
  */
 export function appFamilyOf(processes: Process[], pid: number): Process[] {
   const target = processes.find((p) => p.pid === pid);
   if (!target) return [];
   const byPid = new Map(processes.map((p) => [p.pid, p]));
   const exeKeyOf = (p: Process) =>
-    (p.root.trim() ? p.root : p.name).toLowerCase();
+    (p.exe.trim() ? p.exe : p.name).toLowerCase();
   const targetKey = exeKeyOf(target);
 
   // Stale/cross-session-guarded children map (the same edges buildTreeRows keeps)
@@ -659,14 +660,21 @@ export function countAppFamilySize(
 }
 
 /**
- * Builds the app-group view rows: every application (shared executable
- * within a session, Task Manager's "App (N)" rows) renders as a leader
- * row — the oldest-starting member carrying the application's summed
- * CPU/memory and a "(N)" name suffix — with the remaining members nested
- * one level below. Single-member applications render as plain root rows.
- * The leader row keeps the leader's real PID, so row actions (details,
- * kill, kill-app) target the supervising process. Collapse state is
- * shared with the tree view, keyed by the leader's name.
+ * Builds the app-group rows of the tree view's "app" grouping: every
+ * application (same executable within a session, Task Manager's "App (N)"
+ * rows) renders as a leader row — the oldest-starting member carrying the
+ * application's summed CPU/memory and a "(N)" name suffix — with the
+ * remaining members nested one level below. Single-member applications
+ * render as plain root rows. The leader row keeps the leader's real PID,
+ * so row actions (details, kill, kill-app) target the supervising process.
+ *
+ * Collapse state is keyed by a stable group identity (`app:session|exe`),
+ * NOT the display name — the display name carries the live member count,
+ * so any member churn would re-expand collapsed groups on every refresh.
+ * Application identity = the `exe` path (the `root` field is the cwd's
+ * drive root on Windows — "/" on Linux — and would collapse every
+ * same-drive process onto one key); when the exe read was denied the
+ * name stands in, matching the backend's kill-app-family fallback.
  */
 export function buildAppRows(
   visible: Process[],
@@ -681,9 +689,9 @@ export function buildAppRows(
     // into its row; shared instances (svchost, dotnet, ...) keep one
     // row per session.
     const exeKey = (
-      process.root.trim() ? process.root : process.name
+      process.exe.trim() ? process.exe : process.name
     ).toLowerCase();
-    const key = `${process.session_id ?? 0}|${exeKey}`;
+    const key = `app:${process.session_id ?? 0}|${exeKey}`;
     const members = byKey.get(key);
     if (members) {
       members.push(process);
@@ -697,19 +705,22 @@ export function buildAppRows(
     p.start_time > 0 ? p.start_time : Number.MAX_SAFE_INTEGER;
 
   interface AppGroup {
+    /** Stable identity ("app:session|exe") — the collapse-state key. */
+    key: string;
     leader: Process;
     members: Process[]; // everyone except the leader
+    /** Display name; carries the live "(N)" count, never used as a key. */
     path: string;
   }
   const groups: AppGroup[] = [];
-  for (const members of byKey.values()) {
+  for (const [key, members] of byKey) {
     const leader = members.reduce((a, b) =>
       knownTime(b) < knownTime(a) ? b : a,
     );
     const rest = members.filter((m) => m.pid !== leader.pid);
     const path =
       rest.length > 0 ? `${leader.name} (${rest.length + 1})` : leader.name;
-    groups.push({ leader, members: rest, path });
+    groups.push({ key, leader, members: rest, path });
   }
 
   // Leader rows (and the plain singletons) share the root level, sorted
@@ -723,7 +734,7 @@ export function buildAppRows(
     if (group.members.length === 0) {
       rows.push({
         process: group.leader,
-        path: group.leader.name,
+        path: group.key,
         depth: 0,
         hasChildren: false,
         expanded: false,
@@ -740,10 +751,10 @@ export function buildAppRows(
         group.members.reduce((s, m) => s + m.memory_usage, 0) +
         group.leader.memory_usage,
     };
-    const expanded = !collapsedPaths.has(group.path);
+    const expanded = !collapsedPaths.has(group.key);
     rows.push({
       process: row,
-      path: group.path,
+      path: group.key,
       depth: 0,
       hasChildren: true,
       expanded,
@@ -755,7 +766,7 @@ export function buildAppRows(
       for (const member of sortedMembers) {
         rows.push({
           process: member,
-          path: `${group.path}\u0001${member.name}`,
+          path: `${group.key}\u0001${member.name}`,
           depth: 1,
           hasChildren: false,
           expanded: false,
