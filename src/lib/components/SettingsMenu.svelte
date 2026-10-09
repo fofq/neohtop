@@ -56,6 +56,24 @@
     });
   }
 
+  function selectTreeDefaultExpanded(defaultExpanded: boolean) {
+    settingsStore.updateConfig({
+      behavior: {
+        ...$settingsStore.behavior,
+        treeDefaultExpanded: defaultExpanded,
+      },
+    });
+  }
+
+  function selectTreeAutoCollapse(seconds: number) {
+    settingsStore.updateConfig({
+      behavior: {
+        ...$settingsStore.behavior,
+        treeAutoCollapseSeconds: seconds,
+      },
+    });
+  }
+
   // Sections are data-driven; add a new entry here to extend the menu.
   // Highlight options keep the panel open so toggle and duration can be
   // adjusted in one pass; the radio indicator gives immediate feedback.
@@ -104,6 +122,40 @@
           $settingsStore.appearance.highlighting.durationMs === option.value,
         onSelect: () => selectHighlightDuration(option.value),
       })),
+    },
+    {
+      title: $t("settings.treeDefaultState"),
+      options: [
+        {
+          key: "collapsed",
+          label: $t("settings.treeCollapsedByDefault"),
+          selected: !$settingsStore.behavior.treeDefaultExpanded,
+          onSelect: () => selectTreeDefaultExpanded(false),
+        },
+        {
+          key: "expanded",
+          label: $t("settings.treeExpandedByDefault"),
+          selected: $settingsStore.behavior.treeDefaultExpanded,
+          onSelect: () => selectTreeDefaultExpanded(true),
+        },
+      ],
+    },
+    {
+      title: $t("settings.treeAutoCollapse"),
+      options: [
+        {
+          key: "off",
+          label: $t("settings.treeAutoCollapseOff"),
+          selected: $settingsStore.behavior.treeAutoCollapseSeconds === 0,
+          onSelect: () => selectTreeAutoCollapse(0),
+        },
+        ...[15, 30, 60, 120].map((seconds) => ({
+          key: String(seconds),
+          label: $t("settings.treeAutoCollapseSeconds", { seconds }),
+          selected: $settingsStore.behavior.treeAutoCollapseSeconds === seconds,
+          onSelect: () => selectTreeAutoCollapse(seconds),
+        })),
+      ],
     },
   ];
 

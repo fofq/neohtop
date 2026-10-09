@@ -31,7 +31,6 @@ const en = {
 
   // Row context menu
   "contextMenu.endProcess": "End Process",
-  "contextMenu.endProcessTree": "End Process Tree",
   "contextMenu.endProcessApp": "End Application",
 
   // Stats panels
@@ -133,16 +132,10 @@ const en = {
   "kill.confirm": "End Process",
   "kill.inProgress": "Ending...",
 
-  // Kill process tree modal ({count} is the estimated tree size, "N" or "1+")
-  "killTree.message":
-    "Are you sure you want to end this process and all of its children ({count} total)?",
-  "killTree.confirm": "End Process Tree",
-  "killTree.inProgress": "Ending process tree...",
-  "killTree.success": "Ended {killed} of {requested} processes in the tree",
-
-  // Kill the whole application (Task Manager-style "end task")
+  // Kill the whole application: every process in the target's session that
+  // shares its executable (Task Manager-style "end task", whole-family)
   "killApp.message":
-    "Are you sure you want to end this entire application ({count} processes)? The application's processes and any of its children sharing its executable will be ended. Other applications are not affected.",
+    "Are you sure you want to end this entire application ({count} processes)? Every process in the target's session sharing its executable (same name) will be ended. Other applications are not affected.",
   "killApp.confirm": "End Application",
   "killApp.inProgress": "Ending application...",
   "killApp.success": "Ended {killed} of {requested} application processes",
@@ -567,9 +560,7 @@ const en = {
   "tools.groupStructure": "By process lineage",
   "tools.groupApp": "By application",
   "tools.treeNoPagination":
-    "Tree view shows the full hierarchy, so pagination is disabled.",
-  "tools.appGroupHint":
-    "Processes are grouped by application, so pagination is disabled.",
+    "Grouped views show every process, so pagination is disabled.",
   "tools.collapse": "Collapse",
   "tools.expand": "Expand",
   "tools.collapseAll": "Collapse all",
@@ -595,6 +586,12 @@ const en = {
   "settings.highlightOn": "Enabled",
   "settings.highlightOff": "Disabled",
   "settings.highlightDuration": "Highlight Duration",
+  "settings.treeDefaultState": "Tree view default expansion",
+  "settings.treeCollapsedByDefault": "Collapsed by default",
+  "settings.treeExpandedByDefault": "Expanded by default",
+  "settings.treeAutoCollapse": "Auto-collapse open tree",
+  "settings.treeAutoCollapseOff": "Off",
+  "settings.treeAutoCollapseSeconds": "{seconds} s",
   "settings.elevationSection": "Administrator",
   "settings.elevationRunning": "Running as administrator",
   "settings.elevationRelaunching": "Restarting…",

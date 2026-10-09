@@ -5,12 +5,11 @@
 //! the frontend and the system monitoring functionality.
 
 use crate::monitoring::{
-    AppKillResult, AppWindow, ContainerPort, DeepKillReport, DriverInfo, FileLocker, KillTreeResult,
-    ModuleInfo, PortConnection, PortProbe, ProcessInfo, ProcessMetadata, ProcessMonitor,
-    ProcessPriorityInfo, ServiceInfo, StartupItem, SystemStats, TrafficCounters,
-    collect_network_ports, container_ports, file_lockers, listening_ports, net_diag,
-    network_ports, port_probe, process_control, process_inspection, services, startup_items,
-    tcp_control, window_list,
+    AppKillResult, AppWindow, ContainerPort, DeepKillReport, DriverInfo, FileLocker, ModuleInfo,
+    PortConnection, PortProbe, ProcessInfo, ProcessMetadata, ProcessMonitor, ProcessPriorityInfo,
+    ServiceInfo, StartupItem, SystemStats, TrafficCounters, collect_network_ports,
+    container_ports, file_lockers, listening_ports, net_diag, network_ports, port_probe,
+    process_control, process_inspection, services, startup_items, tcp_control, window_list,
 };
 use crate::state::AppState;
 use tauri::State;
@@ -73,52 +72,16 @@ pub async fn kill_process(pid: u32, state: State<'_, AppState>) -> Result<bool, 
     Ok(process_control::terminate_process(&sys, pid))
 }
 
-/// Attempts to kill an entire process tree rooted at the specified PID
-///
-/// Collects every descendant of the target from the parent PIDs of the
-/// process snapshot (skipping stale PEPID edges: a parent that started
-/// after its child, or a cross-session parent, is not a real ancestor),
-/// refreshed first so children forked since the last polling tick are
-/// included, and kills the target before its descendants (top-down) so a
-/// supervising root cannot relaunch its children mid-kill.
-///
-/// # Arguments
-///
-/// * `pid` - Process ID of the tree root to kill
-/// * `state` - The application state
-///
-/// # Returns
-///
-/// A [`KillTreeResult`] with the number of processes the traversal asked to
-/// kill (descendants plus the target) and how many were actually killed
-///
-/// # Errors
-///
-/// Returns an error string if failed to acquire lock on system state or the
-/// target process wasn't found in the current snapshot
-#[tauri::command]
-pub async fn kill_process_tree(
-    pid: u32,
-    state: State<'_, AppState>,
-) -> Result<KillTreeResult, String> {
-    let mut sys = state.sys.lock().map_err(|e| e.to_string())?;
-    // Refresh up front so the traversal sees children forked since the
-    // last polling tick, and a target that already exited is reported as
-    // missing instead of being killed through a stale snapshot entry
-    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
-    process_control::kill_tree(&sys, pid)
-}
-
 /// Kills the whole application of a process ("End Application")
 ///
-/// The application is the target plus its descendants that share the
-/// target's executable and session — Task Manager's "App (N)" row.
-/// Co-applications launched by the same parent (the rest of the
-/// session's software) are not part of it and are never killed. After a
-/// short re-scan, PIDs of the application that started up in the
-/// meantime are returned as respawns rather than killed. The re-scan
-/// sleeps ~1.5 s, so the refresh tick that lands in the window is
-/// deferred.
+/// The application is EVERY process of the target's session that shares
+/// its executable — the whole "App (N)" group of the tree view's app
+/// grouping, regardless of parentage (a launcher-detached instance is
+/// still the same application). Processes running a different executable,
+/// or sitting in another session, are never killed. After a short
+/// re-scan, PIDs of the application that started up in the meantime are
+/// returned as respawns rather than killed. The re-scan sleeps ~1.5 s, so
+/// the refresh tick that lands in the window is deferred.
 ///
 /// # Arguments
 ///

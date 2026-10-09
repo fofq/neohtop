@@ -118,61 +118,61 @@
           <Fa icon={faList} />
         </button>
       </div>
-      {#if viewMode === "tree"}
-        <!-- Grouping rule inside the tree view: ppid lineage vs app family
-             (Task Manager-style "Name (N)" rows) -->
-        <div
-          class="view-toggle grouping-toggle"
-          role="group"
-          aria-label={$t("tools.grouping")}
-        >
-          <button
-            class="view-option"
-            class:active={treeGrouping === "structure"}
-            on:click={() => setTreeGrouping("structure")}
-            title={$t("tools.groupStructure")}
-            aria-pressed={treeGrouping === "structure"}
-          >
-            <Fa icon={faCodeBranch} />
-          </button>
-          <button
-            class="view-option"
-            class:active={treeGrouping === "app"}
-            on:click={() => setTreeGrouping("app")}
-            title={$t("tools.groupApp")}
-            aria-pressed={treeGrouping === "app"}
-          >
-            <Fa icon={faLayerGroup} />
-          </button>
-        </div>
-        <!-- Collapse/expand-all toggle; the icon shows the action
-             performed, mirroring the ports modal's control -->
+      <!-- Rendered always, hidden (space reserved) in flat view so
+           switching views never shifts the neighbouring controls -->
+      <div
+        class="view-toggle grouping-toggle"
+        class:hidden={viewMode !== "tree"}
+        role="group"
+        aria-label={$t("tools.grouping")}
+      >
         <button
-          class="tree-collapse-toggle"
-          on:click={onToggleTreeCollapse}
-          title={treeCollapsedAny
-            ? $t("tools.expandAll")
-            : $t("tools.collapseAll")}
-          aria-label={treeCollapsedAny
-            ? $t("tools.expandAll")
-            : $t("tools.collapseAll")}
+          class="view-option"
+          class:active={viewMode === "tree" && treeGrouping === "structure"}
+          on:click={() => setTreeGrouping("structure")}
+          title={$t("tools.groupStructure")}
+          aria-pressed={viewMode === "tree" && treeGrouping === "structure"}
         >
-          <Fa
-            icon={treeCollapsedAny ? faExpandArrowsAlt : faCompressArrowsAlt}
-          />
+          <Fa icon={faCodeBranch} />
         </button>
-      {/if}
+        <button
+          class="view-option"
+          class:active={viewMode === "tree" && treeGrouping === "app"}
+          on:click={() => setTreeGrouping("app")}
+          title={$t("tools.groupApp")}
+          aria-pressed={viewMode === "tree" && treeGrouping === "app"}
+        >
+          <Fa icon={faLayerGroup} />
+        </button>
+      </div>
+      <!-- Collapse/expand-all toggle; the icon shows the action performed,
+           mirroring the ports modal's control. Space reserved in flat view. -->
+      <button
+        class="tree-collapse-toggle"
+        class:hidden={viewMode !== "tree"}
+        on:click={onToggleTreeCollapse}
+        title={treeCollapsedAny
+          ? $t("tools.expandAll")
+          : $t("tools.collapseAll")}
+        aria-label={treeCollapsedAny
+          ? $t("tools.expandAll")
+          : $t("tools.collapseAll")}
+      >
+        <Fa icon={treeCollapsedAny ? faExpandArrowsAlt : faCompressArrowsAlt} />
+      </button>
     </div>
 
-    <div class:hidden={isAnyOverlayOpen && activeOverlayType !== "pagination"}>
+    <!-- Fixed-width middle zone: pagination in flat view, the hint in grouped
+         views. The basis (≈ the pagination control's width) keeps the
+         right-hand controls from shifting when views switch. -->
+    <div
+      class="pagination-zone"
+      class:hidden={isAnyOverlayOpen && activeOverlayType !== "pagination"}
+    >
       {#if viewMode === "tree"}
-        <!-- Grouped modes flatten rows into one list, so pagination would
+        <!-- Grouped views flatten rows into one list, so pagination would
              hide children/members. -->
-        <span class="tree-hint">
-          {treeGrouping === "app"
-            ? $t("tools.appGroupHint")
-            : $t("tools.treeNoPagination")}
-        </span>
+        <span class="tree-hint">{$t("tools.treeNoPagination")}</span>
       {:else}
         <PaginationControls
           bind:itemsPerPage
@@ -308,6 +308,16 @@
   .view-option.active {
     color: var(--base);
     background: var(--blue);
+  }
+
+  /* Fixed-width middle zone: holds pagination (flat view) or the no-
+     pagination hint (grouped views). The basis matches the pagination
+     control's typical width so switching views never shifts the
+     right-hand controls; it shrinks with an ellipsis on tight windows. */
+  .pagination-zone {
+    flex: 0 1 320px;
+    min-width: 0;
+    justify-content: flex-start;
   }
 
   /* Icon-only grouping rule inside the tree view, between the view switch

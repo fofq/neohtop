@@ -1,15 +1,15 @@
 //! Process control operations
 //!
 //! Implements suspend/resume, priority class, CPU affinity and efficiency
-//! mode (power throttling) control for a single process, whole-process-tree
+//! mode (power throttling) control for a single process, whole-application
 //! kills, plus elevation helpers the frontend uses to decide when to offer
 //! relaunching the app with administrator privileges. State-changing
 //! operations return `Ok(true)` on success so the frontend can track the
-//! state it changed; the tree kill instead reports its outcome as a
-//! [`KillTreeResult`] with the requested and killed counts.
+//! state it changed; the application kill reports its outcome as an
+//! [`AppKillResult`] with the requested and killed counts.
 
 use serde::Serialize;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::{HashMap, HashSet};
 // Re-exported by the parent module from process_monitor.rs; reused on
 // non-Windows platforms where the kill falls back to the sysinfo kill
 #[cfg(not(windows))]
@@ -31,16 +31,6 @@ pub struct ProcessPriorityInfo {
     pub system_affinity_mask: String,
     /// Whether efficiency mode (power throttling) is enabled for the process
     pub efficiency_mode: bool,
-}
-
-/// Outcome of a whole-process-tree kill
-#[derive(Serialize, Debug)]
-pub struct KillTreeResult {
-    /// Number of processes the traversal collected to kill: every descendant
-    /// of the target plus the target itself
-    pub requested: u32,
-    /// How many of those processes were actually killed successfully
-    pub killed: u32,
 }
 
 /// Suspends all threads of the process with the given PID
@@ -110,54 +100,6 @@ pub fn terminate_process(sys: &sysinfo::System, pid: u32) -> bool {
     }
 }
 
-/// Builds a parent→children map from the process table, dropping stale
-/// PEPID edges (witr-style ancestry guards): an edge is skipped when the
-/// parent started *later* than the child (the kernel's PEPID was never
-/// rewritten after the original parent died, so the PID points at a
-/// recycled process) or when the two sit in different sessions
-/// (adoption). Edges with an unknown timestamp or session are kept —
-/// they cannot be judged.
-fn guarded_children_of(sys: &sysinfo::System) -> HashMap<u32, Vec<u32>> {
-    let mut start_of: HashMap<u32, u64> = HashMap::new();
-    let mut session_of: HashMap<u32, Option<u32>> = HashMap::new();
-    for (pid, process) in sys.processes() {
-        start_of.insert(pid.as_u32(), process.start_time());
-        session_of.insert(pid.as_u32(), process.session_id().map(|s| s.as_u32()));
-    }
-    let mut children_of: HashMap<u32, Vec<u32>> = HashMap::new();
-    for (child, process) in sys.processes() {
-        let Some(parent) = process.parent() else {
-            continue;
-        };
-        let parent_pid = parent.as_u32();
-        let child_pid = child.as_u32();
-        if parent_pid == child_pid {
-            continue;
-        }
-        let Some(parent_start) = start_of.get(&parent_pid) else {
-            continue;
-        };
-        let stale = {
-            let child_start = process.start_time();
-            *parent_start > 0
-                && child_start > 0
-                && *parent_start > child_start
-        };
-        let cross_session = match (
-            session_of.get(&parent_pid).copied(),
-            process.session_id().map(|s| s.as_u32()),
-        ) {
-            (Some(Some(ps)), Some(cs)) if ps != cs => true,
-            _ => false,
-        };
-        if stale || cross_session {
-            continue;
-        }
-        children_of.entry(parent_pid).or_default().push(child_pid);
-    }
-    children_of
-}
-
 /// Outcome of an entire-application kill: what was requested and killed,
 /// plus the new PIDs of the same application that started up *after* the
 /// kill (a supervisor relaunched it)
@@ -200,19 +142,18 @@ fn exe_identity_of(process: &sysinfo::Process) -> String {
 
 /// Kills the entire application of `pid` — the "End Application" equivalent
 ///
-/// The scope is deliberately narrow: the target plus its descendants that
-/// share the target's executable and session — exactly what Task Manager's
-/// "App (N)" row means: the application's own worker processes. Everything
-/// else is excluded on purpose: co-applications launched by the same
-/// launcher (all the other apps the user opened from explorer.exe) and the
-/// application's children that run as a *different* executable. A single
-/// "End Application" can therefore never sweep a launcher's whole session.
+/// The scope is the WHOLE snapshot scan: the target plus every process of
+/// its session that shares its executable — exactly what the tree view's
+/// "app" grouping shows in one "App (N)" row. Parentage is irrelevant: an
+/// instance whose launcher died (or never kept a same-exe chain) is still
+/// the same application to the user. Everything else is excluded on
+/// purpose: any process running a *different* executable and any process
+/// in another session, so the kill can never cross into other software.
 ///
-/// The kill set is traversed through the stale-edge-guarded parent map and
-/// killed in start-time order, so the supervising process dies before the
-/// workers it would relaunch. After the kill the table is refreshed once
-/// and PIDs of the application that started up in the meantime are
-/// reported as respawns, not killed.
+/// The kill set dies in start-time order, so the supervising process dies
+/// before the workers it would relaunch. After the kill the table is
+/// refreshed once and PIDs of the application that started up in the
+/// meantime are reported as respawns, not killed.
 ///
 /// Takes a mutable `sys` because the respawn re-scan refreshes the process
 /// table in place. Must be called while holding the caller's `sys` lock.
@@ -229,53 +170,33 @@ pub fn kill_app_family(sys: &mut sysinfo::System, pid: u32) -> Result<AppKillRes
         .process(sysinfo::Pid::from(pid as usize))
         .ok_or_else(|| format!("Process with PID {} not found", pid))?;
 
-    // --- App scope: the target plus its same-executable descendants ---
+    // --- App scope: the target plus every same-executable session-mate ---
     //
-    // Members are the target and the descendants reachable through nodes
-    // that share the target's executable. A child running a *different*
-    // executable is a boundary: it is not part of the application's
-    // process family, and other processes started by the same launcher
-    // (the rest of the session's apps) are not reachable from the target
-    // at all — so ending a shared launcher such as explorer.exe never
-    // drags the user's other software down with it. The session check
-    // keeps the closure inside the target's session as well.
+    // The whole snapshot is scanned: every process of the target's session
+    // that shares its executable joins the kill set, regardless of
+    // parentage — a launcher-detached instance is still the same
+    // application to the user. Anything running a *different* executable,
+    // or sitting in another session, is excluded, so ending a shared
+    // launcher's name-mates can never cross into other software. Unknown
+    // session sides are kept — they cannot be judged.
     let target_exe_key = exe_identity_of(target);
     let target_session = target.session_id().map(|s| s.as_u32());
 
-    let children_of = guarded_children_of(sys);
-    let exe_key_of: HashMap<u32, String> = sys
+    let kill_set: HashSet<u32> = sys
         .processes()
         .iter()
-        .map(|(p, process)| (p.as_u32(), exe_identity_of(process)))
-        .collect();
-    let session_of: HashMap<u32, Option<u32>> = sys
-        .processes()
-        .iter()
-        .map(|(p, process)| (p.as_u32(), process.session_id().map(|s| s.as_u32())))
-        .collect();
-
-    let mut kill_set: HashSet<u32> = HashSet::new();
-    let mut queue: VecDeque<u32> = VecDeque::new();
-    kill_set.insert(pid);
-    queue.push_back(pid);
-    while let Some(current) = queue.pop_front() {
-        if let Some(children) = children_of.get(&current) {
-            for &child in children {
-                if kill_set.contains(&child) {
-                    continue;
-                }
-                let same_exe = exe_key_of.get(&child) == Some(&target_exe_key);
-                // Unknown session sides are kept — they cannot be judged
-                let same_session = match (target_session, session_of.get(&child).copied().flatten()) {
-                    (Some(t), Some(s)) => t == s,
-                    _ => true,
-                };
-                if same_exe && same_session && kill_set.insert(child) {
-                    queue.push_back(child);
-                }
+        .filter(|(_p, process)| {
+            if exe_identity_of(process) != target_exe_key {
+                return false;
             }
-        }
-    }
+            // Unknown session sides are kept — they cannot be judged
+            match (target_session, process.session_id().map(|s| s.as_u32())) {
+                (Some(t), Some(s)) => t == s,
+                _ => true,
+            }
+        })
+        .map(|(p, _)| p.as_u32())
+        .collect();
 
     if kill_set.len() > MAX_APP_KILL_TARGETS {
         return Err(format!(
@@ -339,68 +260,6 @@ pub fn kill_app_family(sys: &mut sysinfo::System, pid: u32) -> Result<AppKillRes
         requested: kill_set.len() as u32,
         killed,
         respawns,
-    })
-}
-
-/// Kills the whole process tree rooted at `pid`
-///
-/// Builds a parent-to-children map from the parent PID of every process in
-/// the current snapshot, collects the descendants of `pid` with a BFS, then
-/// kills the target first and the descendants in discovery order (top-down).
-/// With the root dying first it can no longer spawn replacements for the
-/// children it is losing; the old bottom-up order left the root fully
-/// functional until the last kill, and a root that supervises its children
-/// (service hosts, cluster masters, watchdogs) would respawn every child as
-/// it died, leaving fresh workers outliving the whole operation — the same
-/// top-down order Task Manager, Process Explorer and System Informer use.
-/// Descendants that refuse to die (e.g. protected processes) are skipped and
-/// only reflected in the killed count.
-///
-/// Must be called while holding the caller's `sys` lock: everything here is
-/// synchronous, so the lock is never held across an `.await`.
-pub fn kill_tree(sys: &sysinfo::System, pid: u32) -> Result<KillTreeResult, String> {
-    let target_pid = sysinfo::Pid::from(pid as usize);
-    if sys.process(target_pid).is_none() {
-        return Err(format!("Process with PID {} not found", pid));
-    }
-
-    // Stale-edge-guarded parent map: a PEPID pointing at a recycled PID
-    // (parent started after its child) or across sessions must not stitch
-    // an unrelated process onto the subtree being killed
-    let children_of = guarded_children_of(sys);
-
-    // BFS discovery order guarantees every child is discovered after its
-    // parent, so the loop below kills the tree top-down
-    let mut descendants: Vec<u32> = Vec::new();
-    let mut visited: HashSet<u32> = HashSet::new();
-    visited.insert(pid);
-    let mut queue: VecDeque<u32> = VecDeque::new();
-    queue.push_back(pid);
-    while let Some(current) = queue.pop_front() {
-        if let Some(children) = children_of.get(&current) {
-            for &child in children {
-                if visited.insert(child) {
-                    queue.push_back(child);
-                    descendants.push(child);
-                }
-            }
-        }
-    }
-
-    let mut killed: u32 = 0;
-    // The target dies first, then the descendants in discovery order
-    if terminate_process(sys, pid) {
-        killed += 1;
-    }
-    for descendant in &descendants {
-        if terminate_process(sys, *descendant) {
-            killed += 1;
-        }
-    }
-
-    Ok(KillTreeResult {
-        requested: descendants.len() as u32 + 1,
-        killed,
     })
 }
 

@@ -33,6 +33,8 @@ export const DEFAULT_CONFIG: AppConfig = {
     refreshRate: 3000,
     defaultStatusFilter: "all",
     treeGrouping: "structure",
+    treeDefaultExpanded: false,
+    treeAutoCollapseSeconds: 30,
     portsViewMode: "flat",
     portsFavorites: [],
     portsWatched: [],

@@ -29,8 +29,6 @@
   export let onRestartProcess: (process: Process) => void;
   export let onToggleSuspend: (process: Process) => void;
   export let onKillProcess: (process: Process) => void;
-  /** Opens the kill-tree confirmation rooted at the given process. */
-  export let onKillTreeProcess: (process: Process) => void = () => {};
   /** Opens the kill-application-family confirmation for the given process. */
   export let onKillAppProcess: (process: Process) => void = () => {};
   /** Toggles a subtree's collapse state, keyed by the row's name path. */
@@ -231,7 +229,6 @@
     x={menuX}
     y={menuY}
     onKill={(killed) => onKillProcess(killed)}
-    onKillTree={(killed) => onKillTreeProcess(killed)}
     onKillApp={(killed) => onKillAppProcess(killed)}
     onClose={closeContextMenu}
   />

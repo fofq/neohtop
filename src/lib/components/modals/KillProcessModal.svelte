@@ -15,18 +15,12 @@
   export let onConfirm: () => Promise<void>;
   export let isKilling = false;
   /**
-   * Estimated tree size ("N", or "1+" when unknown) shown by the
-   * kill-the-whole-tree confirmation; null = plain single kill.
-   */
-  export let treeCount: string | null = null;
-  /**
    * Estimated application-family size shown by the kill-the-whole-app
-   * confirmation; null = not an app-family kill. Takes precedence over
-   * treeCount (the two scopes are mutually exclusive in the store).
+   * confirmation; null = plain single kill.
    */
   export let appCount: string | null = null;
 
-  $: scope = appCount !== null ? "app" : treeCount !== null ? "tree" : "single";
+  $: scope = appCount !== null ? "app" : "single";
 </script>
 
 <Modal {show} title={$t("modal.confirmTitle")} maxWidth="400px" {onClose}>
@@ -37,11 +31,6 @@
           <span class="tree-message">
             <Fa icon={faTriangleExclamation} />
             {$t("killApp.message", { count: appCount })}
-          </span>
-        {:else if treeCount !== null}
-          <span class="tree-message">
-            <Fa icon={faTriangleExclamation} />
-            {$t("killTree.message", { count: treeCount })}
           </span>
         {:else}
           {$t("kill.message")}
@@ -59,22 +48,10 @@
           {#if isKilling}
             <div class="spinner"></div>
             <span>
-              {$t(
-                scope === "app"
-                  ? "killApp.inProgress"
-                  : scope === "tree"
-                  ? "killTree.inProgress"
-                  : "kill.inProgress",
-              )}
+              {$t(scope === "app" ? "killApp.inProgress" : "kill.inProgress")}
             </span>
           {:else}
-            {$t(
-              scope === "app"
-                ? "killApp.confirm"
-                : scope === "tree"
-                ? "killTree.confirm"
-                : "kill.confirm",
-            )}
+            {$t(scope === "app" ? "killApp.confirm" : "kill.confirm")}
           {/if}
         </button>
       </div>

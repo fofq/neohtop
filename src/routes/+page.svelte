@@ -35,7 +35,7 @@
     buildSearchTiers,
     type SearchTier,
   } from "$lib/utils";
-  import type { Process, ProcessTreeRow } from "$lib/types";
+  import type { Process, ProcessTreeRow, TreeGrouping } from "$lib/types";
 
   $: ({
     processes,
@@ -52,7 +52,6 @@
     showConfirmModal,
     processToKill,
     isKilling,
-    killTreeCount,
     killAppCount,
     notice,
     showRestartModal,
@@ -104,6 +103,7 @@
     } else {
       collapsedPaths = next;
     }
+    resetTreeIdleTimer();
   }
 
   // Collapse-all needs every expandable path, including ones currently
@@ -114,6 +114,7 @@
         cachedFilteredProcesses,
         sortConfig,
         new Set<string>(),
+        searchTierMap,
       );
       appCollapsedPaths = new Set(
         full.filter((row) => row.hasChildren).map((row) => row.path),
@@ -125,6 +126,7 @@
       sortConfig,
       new Set<string>(),
       pinnedProcesses,
+      searchTierMap,
     );
     collapsedPaths = new Set(
       full.filter((row) => row.hasChildren).map((row) => row.path),
@@ -149,6 +151,39 @@
     } else {
       collapseAllTree();
     }
+  }
+
+  // Idle auto-collapse: an open grouped view folds itself after N seconds
+  // without any expand/collapse interaction (0 = off). Leaving the grouped
+  // views cancels the clock.
+  let treeIdleTimer: ReturnType<typeof setTimeout> | null = null;
+  $: treeAutoCollapseSeconds = $settingsStore.behavior.treeAutoCollapseSeconds;
+
+  function resetTreeIdleTimer() {
+    if (treeIdleTimer !== null) {
+      clearTimeout(treeIdleTimer);
+      treeIdleTimer = null;
+    }
+    if (viewMode !== "tree" || treeAutoCollapseSeconds <= 0) return;
+    treeIdleTimer = setTimeout(() => {
+      treeIdleTimer = null;
+      collapseAllTree();
+    }, treeAutoCollapseSeconds * 1000);
+  }
+
+  // What a grouped view starts as (collapsed by default, per the settings).
+  // Applied only when the view, the grouping or the setting CHANGES — never
+  // on manual collapse/expand, whose sets stay untouched.
+  function applyTreeExpansionDefault(
+    defaultExpanded: boolean,
+    grouping: TreeGrouping,
+  ) {
+    if (defaultExpanded) {
+      expandAllTree();
+    } else {
+      collapseAllTree();
+    }
+    resetTreeIdleTimer();
   }
 
   // Initialize filters object for the new FilterToggle
@@ -233,8 +268,8 @@
 
   // Grouped views: search/filter hits keep their ancestor chain visible
   // (structure grouping), sort order applies to siblings within each level
-  // (pinned processes are hoisted to the top of the root level), and
-  // pagination is off in both groupings.
+  // (pinned processes are hoisted to the top of the root level), search
+  // tiers rank every level, and pagination is off in both groupings.
   let treeRows: ProcessTreeRow[] | null = null;
   $: visibleTreeProcesses =
     viewMode === "tree" && treeGrouping === "structure"
@@ -243,14 +278,34 @@
   $: treeRows =
     viewMode === "tree"
       ? treeGrouping === "app"
-        ? buildAppRows(cachedFilteredProcesses, sortConfig, appCollapsedPaths)
+        ? buildAppRows(
+            cachedFilteredProcesses,
+            sortConfig,
+            appCollapsedPaths,
+            searchTierMap,
+          )
         : buildTreeRows(
             visibleTreeProcesses,
             sortConfig,
             collapsedPaths,
             pinnedProcesses,
+            searchTierMap,
           )
       : null;
+
+  // Grouped views START the way the settings dictate (collapsed by
+  // default). Fires only when the view, the grouping or the setting
+  // changes — never on manual collapse/expand. Placed after the row
+  // builders so the collapse-all walk sees the freshly visible set.
+  $: if (viewMode === "tree") {
+    applyTreeExpansionDefault(
+      $settingsStore.behavior.treeDefaultExpanded,
+      treeGrouping,
+    );
+  } else if (treeIdleTimer !== null) {
+    clearTimeout(treeIdleTimer);
+    treeIdleTimer = null;
+  }
 
   // The current page is meaningless while paging is off; reset it so
   // switching back to flat view never lands on an empty page.
@@ -342,6 +397,7 @@
   onDestroy(() => {
     if (intervalId) clearInterval(intervalId);
     if (watchTimer !== null) clearInterval(watchTimer);
+    if (treeIdleTimer !== null) clearTimeout(treeIdleTimer);
   });
 </script>
 
@@ -411,7 +467,6 @@
         onRestartProcess={processStore.confirmRestartProcess}
         onToggleSuspend={processStore.toggleSuspend}
         onKillProcess={processStore.confirmKillProcess}
-        onKillTreeProcess={processStore.confirmKillTreeProcess}
         onKillAppProcess={processStore.confirmKillAppProcess}
         onToggleExpand={toggleExpand}
         onHoverTooltip={(process, event) =>
@@ -435,7 +490,6 @@
 <KillProcessModal
   show={showConfirmModal}
   process={processToKill}
-  treeCount={killTreeCount}
   appCount={killAppCount}
   {isKilling}
   onClose={processStore.closeConfirmKill}

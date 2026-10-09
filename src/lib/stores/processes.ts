@@ -3,11 +3,7 @@ import type { PerformanceSample, Process, SystemStats } from "$lib/types";
 import { invoke } from "@tauri-apps/api/core";
 import { t } from "$lib/i18n";
 import { settingsStore } from "./settings";
-import {
-  countProcessTreeSize,
-  countAppFamilySize,
-  withElevationHint,
-} from "$lib/utils";
+import { countAppFamilySize, withElevationHint } from "$lib/utils";
 
 interface ProcessStore {
   processes: Process[];
@@ -23,16 +19,11 @@ interface ProcessStore {
   processToKill: Process | null;
   isKilling: boolean;
   /**
-   * Estimated tree size for the kill-tree confirmation ("N", or "1+" when
-   * the root is missing from the snapshot); null = plain single kill.
-   */
-  killTreeCount: string | null;
-  /**
    * Estimated application-family size for the kill-app confirmation ("N",
    * or "1+" when the target is missing); null = not an app-family kill.
    */
   killAppCount: string | null;
-  /** Transient success notice (e.g. the kill-tree result); auto-clears. */
+  /** Transient success notice (e.g. the kill-app result); auto-clears. */
   notice: string | null;
   showRestartModal: boolean;
   processToRestart: Process | null;
@@ -92,7 +83,6 @@ const initialState: ProcessStore = {
   showConfirmModal: false,
   processToKill: null,
   isKilling: false,
-  killTreeCount: null,
   killAppCount: null,
   notice: null,
   showRestartModal: false,
@@ -291,42 +281,11 @@ function createProcessStore() {
     }
   };
 
-  // Kills the whole tree rooted at pid. The backend reports what it
-  // collected versus what actually died; the notice shows both counts, and
-  // a run where not even one process died goes down the error path (its
-  // most likely cause is missing elevation, so the hint applies).
-  const killProcessTree = async (pid: number) => {
-    try {
-      update((state) => ({ ...state, isKilling: true }));
-      const result = await invoke<{ requested: number; killed: number }>(
-        "kill_process_tree",
-        { pid },
-      );
-      if (result.killed === 0) {
-        throw new Error("Failed to kill process tree");
-      }
-      showNotice(
-        get(t)("killTree.success", {
-          killed: result.killed,
-          requested: result.requested,
-        }),
-      );
-      await getProcesses();
-    } catch (e: unknown) {
-      update((state) => ({
-        ...state,
-        error: withElevationHint(e instanceof Error ? e.message : String(e)),
-      }));
-    } finally {
-      update((state) => ({ ...state, isKilling: false }));
-    }
-  };
-
   // Kills the whole application of pid (Task Manager's "end task").
-  // The backend resolves the application (the target plus its
-  // same-executable descendants) and reports requested/killed plus any
-  // PIDs a supervisor relaunched in the brief re-scan; those are surfaced
-  // as a follow-on notice, not chased automatically.
+  // The backend scans the whole snapshot for the target's session-mates
+  // sharing its executable and reports requested/killed plus any PIDs a
+  // supervisor relaunched in the brief re-scan; those are surfaced as a
+  // follow-on notice, not chased automatically.
   const killAppProcess = async (pid: number) => {
     try {
       update((state) => ({ ...state, isKilling: true }));
@@ -489,25 +448,8 @@ function createProcessStore() {
       ...state,
       processToKill: process,
       showConfirmModal: true,
-      killTreeCount: null,
       killAppCount: null,
     }));
-  };
-
-  // Same confirm modal as the plain kill, switched to the tree warning by
-  // the estimated descendant count taken from the current snapshot
-  const confirmKillTreeProcess = (process: Process) => {
-    update((state) => {
-      const treeSize = countProcessTreeSize(state.processes, process.pid);
-      return {
-        ...state,
-        processToKill: process,
-        showConfirmModal: true,
-        // A root missing from the snapshot gets an open-ended count
-        killTreeCount: treeSize === null ? "1+" : String(treeSize),
-        killAppCount: null,
-      };
-    });
   };
 
   // Same confirm modal as the plain kill, switched to the app-family
@@ -519,7 +461,6 @@ function createProcessStore() {
         ...state,
         processToKill: process,
         showConfirmModal: true,
-        killTreeCount: null,
         // A target missing from the snapshot gets an open-ended count
         killAppCount: size === null ? "1+" : String(size),
       };
@@ -531,7 +472,6 @@ function createProcessStore() {
       ...state,
       showConfirmModal: false,
       processToKill: null,
-      killTreeCount: null,
       killAppCount: null,
     }));
   };
@@ -556,8 +496,6 @@ function createProcessStore() {
     try {
       if (currentState?.killAppCount) {
         await killAppProcess(processToKill.pid);
-      } else if (currentState?.killTreeCount) {
-        await killProcessTree(processToKill.pid);
       } else {
         await killProcess(processToKill.pid);
       }
@@ -566,7 +504,6 @@ function createProcessStore() {
         ...state,
         showConfirmModal: false,
         processToKill: null,
-        killTreeCount: null,
         killAppCount: null,
       }));
     }
@@ -639,7 +576,6 @@ function createProcessStore() {
     showProcessDetails,
     closeProcessDetails,
     confirmKillProcess,
-    confirmKillTreeProcess,
     confirmKillAppProcess,
     closeConfirmKill,
     handleConfirmKill,

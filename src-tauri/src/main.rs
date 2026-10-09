@@ -56,7 +56,6 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::get_processes,
             commands::kill_process,
-            commands::kill_process_tree,
             commands::kill_app_family,
             commands::deep_kill_process,
             commands::ping_host,

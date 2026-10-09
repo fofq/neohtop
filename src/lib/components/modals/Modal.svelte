@@ -5,6 +5,16 @@
   export let onClose: () => void;
 </script>
 
+<!-- Escape closes the modal. svelte:window must sit at the top level, so
+     the listener always exists and the handler checks `show`; nested
+     modals (a confirm inside a panel) each listen, so Escape dismisses
+     both — an accepted trade-off for the rare stacked case. -->
+<svelte:window
+  on:keydown={(event) => {
+    if (show && event.key === "Escape") onClose();
+  }}
+/>
+
 {#if show}
   <!-- svelte-ignore a11y_click_events_have_key_events -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->

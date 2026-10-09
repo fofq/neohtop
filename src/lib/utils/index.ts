@@ -312,12 +312,29 @@ function pinOrderMap(pinnedPids: Iterable<number>): Map<number, number> {
 }
 
 /**
+ * Search-tier comparison: with `searchTiers` (non-empty while a search is
+ * active) name hits rank above command-line/PID-only hits, each tier still
+ * ordered by the sort field — so searching "work" surfaces WorkBuddyAI.exe
+ * instead of scattering it among every *NetworkService* helper. Shared by
+ * the flat sort and both grouped views.
+ */
+function compareWithSearchTiers(
+  a: Process,
+  b: Process,
+  sortConfig: SortConfig,
+  searchTiers?: Map<number, SearchTier>,
+): number {
+  if (searchTiers && searchTiers.size > 0) {
+    const tierDiff =
+      (searchTiers.get(a.pid) ?? 0) - (searchTiers.get(b.pid) ?? 0);
+    if (tierDiff !== 0) return tierDiff;
+  }
+  return compareProcesses(a, b, sortConfig);
+}
+
+/**
  * Pin-first comparison used by both the flat sort and the tree roots.
- * With `searchTiers` (non-empty while a search is active) name hits rank
- * above command-line/PID-only hits, each tier still ordered by the sort
- * field — so searching "work" surfaces WorkBuddyAI.exe instead of
- * scattering it among every *NetworkService* helper. Pinned processes
- * stay above both tiers.
+ * Pinned processes stay above both search tiers.
  */
 function compareWithPinsFirst(
   a: Process,
@@ -333,12 +350,7 @@ function compareWithPinsFirst(
     if (bPin === undefined) return -1;
     return aPin - bPin;
   }
-  if (searchTiers && searchTiers.size > 0) {
-    const tierDiff =
-      (searchTiers.get(a.pid) ?? 0) - (searchTiers.get(b.pid) ?? 0);
-    if (tierDiff !== 0) return tierDiff;
-  }
-  return compareProcesses(a, b, sortConfig);
+  return compareWithSearchTiers(a, b, sortConfig, searchTiers);
 }
 
 export function sortProcesses(
@@ -470,6 +482,7 @@ export function buildTreeRows(
   sortConfig: SortConfig,
   collapsedPaths: Set<string>,
   pinnedPids: Iterable<number> = new Set<number>(),
+  searchTiers?: Map<number, SearchTier>,
 ): ProcessTreeRow[] {
   const pinOrder = pinOrderMap(pinnedPids);
   const byPid = new Map(visible.map((p) => [p.pid, p]));
@@ -495,11 +508,15 @@ export function buildTreeRows(
   }
 
   const sortSiblings = (siblings: Process[], isRoot: boolean) => {
-    if (!isRoot || pinOrder.size === 0) {
-      siblings.sort((a, b) => compareProcesses(a, b, sortConfig));
+    if (isRoot && pinOrder.size > 0) {
+      siblings.sort((a, b) =>
+        compareWithPinsFirst(a, b, pinOrder, sortConfig, searchTiers),
+      );
       return;
     }
-    siblings.sort((a, b) => compareWithPinsFirst(a, b, pinOrder, sortConfig));
+    siblings.sort((a, b) =>
+      compareWithSearchTiers(a, b, sortConfig, searchTiers),
+    );
   };
   for (const [key, siblings] of childrenOf.entries()) {
     sortSiblings(siblings, key === null);
@@ -547,109 +564,37 @@ export function buildTreeRows(
 }
 
 /**
- * Estimates the size of the process tree rooted at `pid` from a snapshot:
- * the process itself plus every descendant reachable through ppid chains.
- * Returns null when the root is absent from the snapshot so the caller can
- * present an open-ended count ("1+") instead of a wrong one. Cycles
- * (self-referencing ppids, e.g. after PID reuse) are tolerated.
- */
-export function countProcessTreeSize(
-  processes: Process[],
-  pid: number,
-): number | null {
-  if (!processes.some((process) => process.pid === pid)) {
-    return null;
-  }
-  const byPid = new Map(processes.map((p) => [p.pid, p]));
-  const childrenOf = new Map<number, number[]>();
-  for (const process of processes) {
-    // ppid 0 means "no parent recorded" and must never anchor a subtree;
-    // a stale edge (recycled/cross-session parent) never does either
-    if (process.ppid <= 0) continue;
-    const parent = byPid.get(process.ppid);
-    if (parent && parent.pid !== process.pid && isStaleEdge(parent, process))
-      continue;
-    const siblings = childrenOf.get(process.ppid);
-    if (siblings) {
-      siblings.push(process.pid);
-    } else {
-      childrenOf.set(process.ppid, [process.pid]);
-    }
-  }
-  let count = 0;
-  const visited = new Set<number>([pid]);
-  const queue = [pid];
-  while (queue.length > 0) {
-    const current = queue.pop()!;
-    count++;
-    for (const child of childrenOf.get(current) ?? []) {
-      if (!visited.has(child)) {
-        visited.add(child);
-        queue.push(child);
-      }
-    }
-  }
-  return count;
-}
-
-/**
- * Application scope of `pid`, Task Manager's "end task" semantics: the
- * target plus its descendants that share the target's executable and
- * session (exe path, case-insensitive; the name when the exe read was
- * denied — mirroring the backend's kill-app-family fallback exactly).
- * A descendant that runs as a *different* executable is a boundary — it
- * and the rest of the session's software are never part of the
- * application.
+ * Application scope of `pid`, the "End Application" semantics: EVERY
+ * process of the target's session that shares its executable (exe path,
+ * case-insensitive; the name when the exe read was denied — mirroring the
+ * backend's kill-app-family fallback exactly), regardless of parentage.
+ * A process running a *different* executable, or sitting in another
+ * session, is never part of the application.
  */
 export function appFamilyOf(processes: Process[], pid: number): Process[] {
   const target = processes.find((p) => p.pid === pid);
   if (!target) return [];
-  const byPid = new Map(processes.map((p) => [p.pid, p]));
   const exeKeyOf = (p: Process) =>
     (p.exe.trim() ? p.exe : p.name).toLowerCase();
   const targetKey = exeKeyOf(target);
-
-  // Stale/cross-session-guarded children map (the same edges buildTreeRows keeps)
-  const childrenOf = new Map<number, number[]>();
-  for (const p of processes) {
-    if (p.ppid <= 0) continue;
-    const parent = byPid.get(p.ppid);
-    if (parent && parent.pid !== p.pid && isStaleEdge(parent, p)) continue;
-    const siblings = childrenOf.get(p.ppid);
-    if (siblings) {
-      siblings.push(p.pid);
-    } else {
-      childrenOf.set(p.ppid, [p.pid]);
-    }
-  }
-
-  // Descend only through nodes that keep the application's executable
-  const out: Process[] = [target];
-  const seen = new Set<number>([pid]);
-  const queue: number[] = [pid];
-  while (queue.length > 0) {
-    const current = queue.pop()!;
-    for (const childPid of childrenOf.get(current) ?? []) {
-      if (seen.has(childPid)) continue;
-      const child = byPid.get(childPid);
-      if (!child) continue;
-      const sameSession =
-        target.session_id === undefined ||
-        child.session_id === undefined ||
-        child.session_id === target.session_id;
-      if (exeKeyOf(child) !== targetKey || !sameSession) continue;
-      seen.add(childPid);
-      out.push(child);
-      queue.push(childPid);
-    }
-  }
-  return out;
+  // "End Application" scans the whole snapshot: every process of the
+  // target's session sharing its executable, regardless of parentage —
+  // a launcher-detached instance is still the same application. Unknown
+  // session sides are kept (they cannot be judged). The backend
+  // kill-app-family applies this exact same rule.
+  return processes.filter(
+    (p) =>
+      exeKeyOf(p) === targetKey &&
+      (target.session_id === undefined ||
+        p.session_id === undefined ||
+        p.session_id === target.session_id),
+  );
 }
 
 /**
  * Sizes the application scope of `pid` from the snapshot (the estimate
- * the kill-the-app confirmation shows: target plus same-executable
- * descendants); null when the target is missing.
+ * the kill-the-app confirmation shows: every same-executable process of
+ * the target's session); null when the target is missing.
  */
 export function countAppFamilySize(
   processes: Process[],
@@ -680,6 +625,7 @@ export function buildAppRows(
   visible: Process[],
   sortConfig: SortConfig,
   collapsedPaths: Set<string>,
+  searchTiers?: Map<number, SearchTier>,
 ): ProcessTreeRow[] {
   const byKey = new Map<string, Process[]>();
   for (const process of visible) {
@@ -724,9 +670,10 @@ export function buildAppRows(
   }
 
   // Leader rows (and the plain singletons) share the root level, sorted
-  // by the active column using the leader's aggregated values
+  // by the active column using the leader's aggregated values; search
+  // tiers rank the leader rows too (tier is read off the leader's pid)
   groups.sort((a, b) =>
-    compareProcesses(leaderAgg(a), leaderAgg(b), sortConfig),
+    compareWithSearchTiers(leaderAgg(a), leaderAgg(b), sortConfig, searchTiers),
   );
 
   const rows: ProcessTreeRow[] = [];
@@ -761,7 +708,7 @@ export function buildAppRows(
     });
     if (expanded) {
       const sortedMembers = [...group.members].sort((a, b) =>
-        compareProcesses(a, b, sortConfig),
+        compareWithSearchTiers(a, b, sortConfig, searchTiers),
       );
       for (const member of sortedMembers) {
         rows.push({

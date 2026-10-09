@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import Fa from "svelte-fa";
-  import { faSitemap, faXmark, faLayerGroup } from "@fortawesome/free-solid-svg-icons";
+  import { faXmark, faLayerGroup } from "@fortawesome/free-solid-svg-icons";
   import type { Process } from "$lib/types";
   import { t } from "$lib/i18n";
 
@@ -10,7 +10,6 @@
   export let x: number;
   export let y: number;
   export let onKill: (process: Process) => void = () => {};
-  export let onKillTree: (process: Process) => void = () => {};
   export let onKillApp: (process: Process) => void = () => {};
   export let onClose: () => void = () => {};
 
@@ -29,11 +28,6 @@
   const handleKill = () => {
     onClose();
     onKill(process);
-  };
-
-  const handleKillTree = () => {
-    onClose();
-    onKillTree(process);
   };
 
   const handleKillApp = () => {
@@ -83,10 +77,6 @@
   <button class="menu-item danger" role="menuitem" on:click={handleKill}>
     <Fa icon={faXmark} />
     <span>{$t("contextMenu.endProcess")}</span>
-  </button>
-  <button class="menu-item danger" role="menuitem" on:click={handleKillTree}>
-    <Fa icon={faSitemap} />
-    <span>{$t("contextMenu.endProcessTree")}</span>
   </button>
   <button class="menu-item danger" role="menuitem" on:click={handleKillApp}>
     <Fa icon={faLayerGroup} />

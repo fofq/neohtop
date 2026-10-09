@@ -33,7 +33,6 @@ const zhCN: Record<TranslationKey, string> = {
 
   // Row context menu
   "contextMenu.endProcess": "结束进程",
-  "contextMenu.endProcessTree": "结束进程树",
   "contextMenu.endProcessApp": "结束整个应用",
 
   // Stats panels
@@ -135,15 +134,10 @@ const zhCN: Record<TranslationKey, string> = {
   "kill.confirm": "结束进程",
   "kill.inProgress": "正在结束...",
 
-  // Kill process tree modal ({count} is the estimated tree size, "N" or "1+")
-  "killTree.message": "确定要结束该进程及其所有子进程吗（共 {count} 个）？",
-  "killTree.confirm": "结束进程树",
-  "killTree.inProgress": "正在结束进程树...",
-  "killTree.success": "已结束进程树中的 {killed} / {requested} 个进程",
-
-  // Kill the whole application (Task Manager-style "end task")
+  // Kill the whole application: every process in the target's session that
+  // shares its executable (Task Manager-style "end task", whole-family)
   "killApp.message":
-    "确定要结束整个应用吗（共 {count} 个进程）？将结束该应用的进程及其与其同属一个可执行文件的子进程，其他应用不受影响。",
+    "确定要结束整个应用吗（共 {count} 个进程）？将结束目标所在会话中所有同可执行文件（同名）的进程，其他应用不受影响。",
   "killApp.confirm": "结束整个应用",
   "killApp.inProgress": "正在结束整个应用...",
   "killApp.success": "已结束应用中的 {killed} / {requested} 个进程",
@@ -556,8 +550,7 @@ const zhCN: Record<TranslationKey, string> = {
   "tools.grouping": "树视图分组",
   "tools.groupStructure": "按进程层级",
   "tools.groupApp": "按应用聚合",
-  "tools.treeNoPagination": "树形视图展示完整层级结构，已禁用分页。",
-  "tools.appGroupHint": "进程按应用聚合显示，已禁用分页。",
+  "tools.treeNoPagination": "分组视图完整展示所有进程，已禁用分页。",
   "tools.collapse": "折叠",
   "tools.expand": "展开",
   "tools.collapseAll": "全部折叠",
@@ -583,6 +576,12 @@ const zhCN: Record<TranslationKey, string> = {
   "settings.highlightOn": "开启",
   "settings.highlightOff": "关闭",
   "settings.highlightDuration": "高亮时长",
+  "settings.treeDefaultState": "树视图默认展开状态",
+  "settings.treeCollapsedByDefault": "默认折叠",
+  "settings.treeExpandedByDefault": "默认展开",
+  "settings.treeAutoCollapse": "打开的树自动折叠",
+  "settings.treeAutoCollapseOff": "关闭",
+  "settings.treeAutoCollapseSeconds": "{seconds} 秒",
   "settings.elevationSection": "管理员",
   "settings.elevationRunning": "正在以管理员身份运行",
   "settings.elevationRelaunching": "正在重启…",

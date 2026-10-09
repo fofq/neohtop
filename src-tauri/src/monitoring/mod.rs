@@ -42,7 +42,6 @@ pub use network_ports::{
     traffic_counters,
 };
 pub use process_control::ProcessPriorityInfo;
-pub use process_control::KillTreeResult;
 pub use process_control::DeepKillReport;
 pub use process_control::AppKillResult;
 pub use startup_items::StartupItem;

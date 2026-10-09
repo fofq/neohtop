@@ -98,6 +98,11 @@ export interface AppConfig {
     defaultStatusFilter: string;
     /** Grouping rule of the process tree view. */
     treeGrouping: TreeGrouping;
+    /** Whether switching to a grouped view starts fully expanded (false =
+     * everything starts collapsed, the tidy Task-Manager-like default). */
+    treeDefaultExpanded: boolean;
+    /** Idle seconds before an open grouped view auto-collapses; 0 = off. */
+    treeAutoCollapseSeconds: number;
     /** Last selected network ports modal view mode. */
     portsViewMode: PortsViewMode;
     /** Favorite ports of the network ports modal, keyed "protocol:local_port". */
