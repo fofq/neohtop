@@ -32,6 +32,8 @@
     withAncestors,
     buildTreeRows,
     buildAppRows,
+    buildSearchTiers,
+    type SearchTier,
   } from "$lib/utils";
   import type { Process, ProcessTreeRow } from "$lib/types";
 
@@ -64,6 +66,10 @@
   let lastProcessCount = 0;
   let cachedFilteredProcesses: Process[] = [];
   let cachedSortedProcesses: Process[] = [];
+  // Search relevance per pid (0 = name hit, 1 = command-line/PID-only
+  // hit); empty while no search is active. Feeds sortProcesses so name
+  // hits lead the flat list regardless of the sorted column.
+  let searchTierMap = new Map<number, SearchTier>();
 
   // "flat" = paginated list (default); "tree" = grouped by ppid; "app" =
   // grouped by application family (Task Manager's "App (N)" rows).
@@ -163,9 +169,12 @@
   $: itemsPerPage = $settingsStore.behavior.itemsPerPage;
   $: refreshRate = $settingsStore.behavior.refreshRate;
 
-  // Throttled filtering to reduce CPU usage
+  // Throttled filtering to reduce CPU usage; the tier map is rebuilt with
+  // the same terms so filter and rank stay consistent (must land before
+  // the reactive re-sort below reads it, which the shared flush guarantees)
   const debouncedFilter = debounce(() => {
     cachedFilteredProcesses = filterProcesses(processes, searchTerm, filters);
+    searchTierMap = buildSearchTiers(cachedFilteredProcesses, searchTerm);
   }, 100);
 
   // Only recalculate filtering when inputs actually change
@@ -181,17 +190,23 @@
     !searchTerm &&
     !Object.values(filters).some((f) => f.enabled)
   ) {
-    // No filters applied, use all processes directly
+    // No filters applied, use all processes directly; drop the stale tier
+    // map without reassigning an already-empty one (would retrigger the
+    // sort below on every refresh tick for nothing)
     cachedFilteredProcesses = processes;
+    if (searchTierMap.size > 0) searchTierMap = new Map();
   }
 
   // Cache sorted results to avoid re-sorting unchanged data; pinned
-  // processes float to the top in pin order ahead of the sort field
+  // processes float to the top in pin order ahead of the sort field, and
+  // while a search is active name hits rank ahead of command-line/PID
+  // hits within that same order
   $: if (cachedFilteredProcesses && sortConfig) {
     cachedSortedProcesses = sortProcesses(
       cachedFilteredProcesses,
       sortConfig,
       pinnedProcesses,
+      searchTierMap,
     );
   } else {
     cachedSortedProcesses = cachedFilteredProcesses;

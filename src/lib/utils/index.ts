@@ -64,6 +64,92 @@ export function debounce<T extends (...args: any[]) => any>(
 // Cache for compiled regex patterns
 const regexCache = new Map<string, RegExp>();
 
+/**
+ * Search relevance tier of a hit. Tier 0 = the process NAME itself
+ * matches (what the user is usually after); tier 1 = only the command
+ * line or the PID matches (contextual — "work" also lives inside every
+ * *NetworkService* argument, so a bare field OR-match buries the real
+ * name hits under browser helpers).
+ */
+export type SearchTier = 0 | 1;
+
+/**
+ * Splits the raw search box content into terms. Empty terms (a trailing
+ * comma would produce one, and the empty string is a substring of
+ * everything) are dropped instead of matching the whole list.
+ */
+export function searchTerms(searchTerm: string): string[] {
+  return searchTerm
+    .split(",")
+    .map((term) => term.trim())
+    .filter((term) => term.length > 0);
+}
+
+/**
+ * Relevance tier of `process` against the search terms, or null when it
+ * does not match at all. Name hits (substring, or regex for pattern-y
+ * terms) are tier 0 and win immediately; command-line/PID hits are the
+ * tier-1 fallback. Shared by filterProcesses and buildSearchTiers so the
+ * filter and the rank can never disagree.
+ */
+export function searchMatchTier(
+  process: Process,
+  terms: string[],
+): SearchTier | null {
+  if (terms.length === 0) return null;
+  const nameLower = process.name.toLowerCase();
+  const commandLower = process.command.toLowerCase();
+  const pidString = process.pid.toString();
+
+  let contextual = false;
+  for (const term of terms) {
+    const termLower = term.toLowerCase();
+    if (nameLower.includes(termLower)) return 0;
+    if (
+      !contextual &&
+      (commandLower.includes(termLower) || pidString.includes(term))
+    ) {
+      contextual = true;
+    }
+  }
+  if (contextual) return 1;
+
+  // Regex pass on the name only (the command line never had one, same as
+  // before); invalid patterns simply never match.
+  for (const term of terms) {
+    try {
+      let regex = regexCache.get(term);
+      if (!regex) {
+        regex = new RegExp(term, "i");
+        regexCache.set(term, regex);
+      }
+      if (regex.test(process.name)) return 0;
+    } catch {
+      // Invalid pattern: the substring pass already had its chance.
+    }
+  }
+  return null;
+}
+
+/**
+ * Tier per pid for the current filtered list, consumed by sortProcesses so
+ * name hits lead the flat list while the user's sort column orders within
+ * each tier. Empty when no search is active.
+ */
+export function buildSearchTiers(
+  processes: Process[],
+  searchTerm: string,
+): Map<number, SearchTier> {
+  const tiers = new Map<number, SearchTier>();
+  const terms = searchTerms(searchTerm);
+  if (terms.length === 0) return tiers;
+  for (const process of processes) {
+    const tier = searchMatchTier(process, terms);
+    if (tier !== null) tiers.set(process.pid, tier);
+  }
+  return tiers;
+}
+
 export function filterProcesses(
   processes: Process[],
   searchTerm: string,
@@ -83,10 +169,7 @@ export function filterProcesses(
   }
 
   // Pre-process search terms once
-  const terms =
-    searchTerm.length > 0
-      ? searchTerm.split(",").map((term) => term.trim())
-      : [];
+  const terms = searchTerm.length > 0 ? searchTerms(searchTerm) : [];
 
   return processes.filter((process) => {
     // Apply status filter
@@ -131,36 +214,8 @@ export function filterProcesses(
       return true;
     }
 
-    // Cache lowercase values
-    const processNameLower = process.name.toLowerCase();
-    const processCommandLower = process.command.toLowerCase();
-    const processPidString = process.pid.toString();
-
-    // Check each term
-    return terms.some((term) => {
-      const termLower = term.toLowerCase();
-
-      // Try exact matches first (faster)
-      if (
-        processNameLower.includes(termLower) ||
-        processCommandLower.includes(termLower) ||
-        processPidString.includes(term)
-      ) {
-        return true;
-      }
-
-      // Try regex match last (slower)
-      try {
-        let regex = regexCache.get(term);
-        if (!regex) {
-          regex = new RegExp(term, "i");
-          regexCache.set(term, regex);
-        }
-        return regex.test(process.name);
-      } catch {
-        return false;
-      }
-    });
+    // The filter only needs the verdict, not the tier
+    return searchMatchTier(process, terms) !== null;
   });
 }
 
@@ -256,12 +311,20 @@ function pinOrderMap(pinnedPids: Iterable<number>): Map<number, number> {
   return order;
 }
 
-/** Pin-first comparison used by both the flat sort and the tree roots. */
+/**
+ * Pin-first comparison used by both the flat sort and the tree roots.
+ * With `searchTiers` (non-empty while a search is active) name hits rank
+ * above command-line/PID-only hits, each tier still ordered by the sort
+ * field — so searching "work" surfaces WorkBuddyAI.exe instead of
+ * scattering it among every *NetworkService* helper. Pinned processes
+ * stay above both tiers.
+ */
 function compareWithPinsFirst(
   a: Process,
   b: Process,
   pinOrder: Map<number, number>,
   sortConfig: SortConfig,
+  searchTiers?: Map<number, SearchTier>,
 ): number {
   const aPin = pinOrder.get(a.pid);
   const bPin = pinOrder.get(b.pid);
@@ -270,6 +333,11 @@ function compareWithPinsFirst(
     if (bPin === undefined) return -1;
     return aPin - bPin;
   }
+  if (searchTiers && searchTiers.size > 0) {
+    const tierDiff =
+      (searchTiers.get(a.pid) ?? 0) - (searchTiers.get(b.pid) ?? 0);
+    if (tierDiff !== 0) return tierDiff;
+  }
   return compareProcesses(a, b, sortConfig);
 }
 
@@ -277,13 +345,11 @@ export function sortProcesses(
   processes: Process[],
   sortConfig: SortConfig,
   pinnedPids: Iterable<number> = new Set<number>(),
+  searchTiers?: Map<number, SearchTier>,
 ): Process[] {
   const pinOrder = pinOrderMap(pinnedPids);
-  if (pinOrder.size === 0) {
-    return [...processes].sort((a, b) => compareProcesses(a, b, sortConfig));
-  }
   return [...processes].sort((a, b) =>
-    compareWithPinsFirst(a, b, pinOrder, sortConfig),
+    compareWithPinsFirst(a, b, pinOrder, sortConfig, searchTiers),
   );
 }
 
