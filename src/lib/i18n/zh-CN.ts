@@ -577,6 +577,7 @@ const zhCN: Record<TranslationKey, string> = {
   "settings.highlightOff": "关闭",
   "settings.highlightDuration": "高亮时长",
   "settings.treeDefaultState": "树视图默认展开状态",
+  "settings.treeDefaultGrouping": "进入树视图时的分组",
   "settings.treeCollapsedByDefault": "默认折叠",
   "settings.treeExpandedByDefault": "默认展开",
   "settings.treeAutoCollapse": "打开的树自动折叠",

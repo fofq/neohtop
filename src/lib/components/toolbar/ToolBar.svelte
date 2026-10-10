@@ -162,25 +162,28 @@
       </button>
     </div>
 
-    <!-- Fixed-width middle zone: pagination in flat view, the hint in grouped
-         views. The basis (≈ the pagination control's width) keeps the
-         right-hand controls from shifting when views switch. -->
+    <!-- Middle zone: pagination in flat view, the hint in grouped views.
+         Both children stay mounted and share ONE grid cell, so the zone is
+         exactly as wide as the wider of the two — switching views never
+         shifts the neighbouring controls, and the pagination control is
+         never squeezed into a guessed fixed width. -->
     <div
       class="pagination-zone"
       class:hidden={isAnyOverlayOpen && activeOverlayType !== "pagination"}
     >
-      {#if viewMode === "tree"}
-        <!-- Grouped views flatten rows into one list, so pagination would
-             hide children/members. -->
-        <span class="tree-hint">{$t("tools.treeNoPagination")}</span>
-      {:else}
+      <!-- Grouped views flatten rows into one list, so pagination would
+           hide children/members. -->
+      <span class="tree-hint" class:hidden={viewMode !== "tree"}>
+        {$t("tools.treeNoPagination")}
+      </span>
+      <div class="pagination-slot" class:hidden={viewMode === "tree"}>
         <PaginationControls
           bind:itemsPerPage
           bind:currentPage
           {totalPages}
           {totalResults}
         />
-      {/if}
+      </div>
     </div>
     <div class="toolbar-spacer" class:hidden={isAnyOverlayOpen}></div>
 
@@ -310,14 +313,20 @@
     background: var(--blue);
   }
 
-  /* Fixed-width middle zone: holds pagination (flat view) or the no-
-     pagination hint (grouped views). The basis matches the pagination
-     control's typical width so switching views never shifts the
-     right-hand controls; it shrinks with an ellipsis on tight windows. */
-  .pagination-zone {
-    flex: 0 1 320px;
+  /* Middle zone: pagination (flat view) and the no-pagination hint
+     (grouped views) are BOTH mounted and stacked in one grid cell, so the
+     zone is exactly as wide as the wider of the two — switching views
+     never shifts the neighbouring controls, and the pagination control is
+     never squeezed into a guessed fixed width. Needs the parent-scoped
+     selector to out-rank `.toolbar-content > div` (display: flex). */
+  .toolbar-content > .pagination-zone {
+    display: grid;
     min-width: 0;
-    justify-content: flex-start;
+  }
+
+  .pagination-zone > * {
+    grid-area: 1 / 1;
+    min-width: 0;
   }
 
   /* Icon-only grouping rule inside the tree view, between the view switch

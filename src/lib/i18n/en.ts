@@ -587,6 +587,7 @@ const en = {
   "settings.highlightOff": "Disabled",
   "settings.highlightDuration": "Highlight Duration",
   "settings.treeDefaultState": "Tree view default expansion",
+  "settings.treeDefaultGrouping": "Grouping when entering the tree view",
   "settings.treeCollapsedByDefault": "Collapsed by default",
   "settings.treeExpandedByDefault": "Expanded by default",
   "settings.treeAutoCollapse": "Auto-collapse open tree",

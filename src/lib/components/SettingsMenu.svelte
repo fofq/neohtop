@@ -7,6 +7,7 @@
   import { settingsStore, isElevated } from "$lib/stores/index";
   import { overlayStore } from "$lib/stores/overlay";
   import { HIGHLIGHT_DURATION_OPTIONS } from "$lib/constants";
+  import type { TreeGrouping } from "$lib/types";
   import { Modal } from "$lib/components";
 
   interface MenuOption {
@@ -62,6 +63,12 @@
         ...$settingsStore.behavior,
         treeDefaultExpanded: defaultExpanded,
       },
+    });
+  }
+
+  function selectTreeDefaultGrouping(grouping: TreeGrouping) {
+    settingsStore.updateConfig({
+      behavior: { ...$settingsStore.behavior, treeDefaultGrouping: grouping },
     });
   }
 
@@ -137,6 +144,23 @@
           label: $t("settings.treeExpandedByDefault"),
           selected: $settingsStore.behavior.treeDefaultExpanded,
           onSelect: () => selectTreeDefaultExpanded(true),
+        },
+      ],
+    },
+    {
+      title: $t("settings.treeDefaultGrouping"),
+      options: [
+        {
+          key: "structure",
+          label: $t("tools.groupStructure"),
+          selected: $settingsStore.behavior.treeDefaultGrouping === "structure",
+          onSelect: () => selectTreeDefaultGrouping("structure"),
+        },
+        {
+          key: "app",
+          label: $t("tools.groupApp"),
+          selected: $settingsStore.behavior.treeDefaultGrouping === "app",
+          onSelect: () => selectTreeDefaultGrouping("app"),
         },
       ],
     },

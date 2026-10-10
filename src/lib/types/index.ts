@@ -98,6 +98,8 @@ export interface AppConfig {
     defaultStatusFilter: string;
     /** Grouping rule of the process tree view. */
     treeGrouping: TreeGrouping;
+    /** Grouping applied when entering a grouped view. */
+    treeDefaultGrouping: TreeGrouping;
     /** Whether switching to a grouped view starts fully expanded (false =
      * everything starts collapsed, the tidy Task-Manager-like default). */
     treeDefaultExpanded: boolean;

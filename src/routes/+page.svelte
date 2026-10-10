@@ -159,11 +159,15 @@
   let treeIdleTimer: ReturnType<typeof setTimeout> | null = null;
   $: treeAutoCollapseSeconds = $settingsStore.behavior.treeAutoCollapseSeconds;
 
-  function resetTreeIdleTimer() {
+  function cancelTreeIdleTimer() {
     if (treeIdleTimer !== null) {
       clearTimeout(treeIdleTimer);
       treeIdleTimer = null;
     }
+  }
+
+  function resetTreeIdleTimer() {
+    cancelTreeIdleTimer();
     if (viewMode !== "tree" || treeAutoCollapseSeconds <= 0) return;
     treeIdleTimer = setTimeout(() => {
       treeIdleTimer = null;
@@ -275,6 +279,42 @@
     viewMode === "tree" && treeGrouping === "structure"
       ? withAncestors(cachedFilteredProcesses, processes)
       : [];
+
+  // Entering a grouped view applies the preferred default grouping (the
+  // "when entering the tree view" setting); leaving just records the
+  // transition. Matching on the TRANSITION — not the state — keeps manual
+  // grouping switches inside the view untouched.
+  let prevViewMode: "flat" | "tree" = "flat";
+  $: {
+    if (viewMode === "tree" && prevViewMode !== "tree") {
+      prevViewMode = "tree";
+      const preferred = $settingsStore.behavior.treeDefaultGrouping;
+      if (treeGrouping !== preferred) {
+        settingsStore.updateConfig({
+          behavior: { ...$settingsStore.behavior, treeGrouping: preferred },
+        });
+      }
+    } else if (viewMode !== "tree" && prevViewMode !== "flat") {
+      prevViewMode = "flat";
+    }
+  }
+
+  // Grouped views START the way the settings dictate (collapsed by
+  // default). Fires only when the view, the grouping or the setting
+  // CHANGES — manual collapse/expand never touches those. The idle timer
+  // is deliberately NOT a dependency (resetting it must never re-fold the
+  // rows the user just expanded). Positioned after visibleTreeProcesses
+  // and before treeRows so a view switch computes the collapse sets in the
+  // SAME update pass that renders the rows — no expanded flash first.
+  $: if (viewMode === "tree") {
+    applyTreeExpansionDefault(
+      $settingsStore.behavior.treeDefaultExpanded,
+      treeGrouping,
+    );
+  } else {
+    cancelTreeIdleTimer();
+  }
+
   $: treeRows =
     viewMode === "tree"
       ? treeGrouping === "app"
@@ -292,20 +332,6 @@
             searchTierMap,
           )
       : null;
-
-  // Grouped views START the way the settings dictate (collapsed by
-  // default). Fires only when the view, the grouping or the setting
-  // changes — never on manual collapse/expand. Placed after the row
-  // builders so the collapse-all walk sees the freshly visible set.
-  $: if (viewMode === "tree") {
-    applyTreeExpansionDefault(
-      $settingsStore.behavior.treeDefaultExpanded,
-      treeGrouping,
-    );
-  } else if (treeIdleTimer !== null) {
-    clearTimeout(treeIdleTimer);
-    treeIdleTimer = null;
-  }
 
   // The current page is meaningless while paging is off; reset it so
   // switching back to flat view never lands on an empty page.
