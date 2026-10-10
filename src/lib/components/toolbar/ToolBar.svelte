@@ -100,9 +100,11 @@
       <FilterToggle bind:filters />
     </div>
 
-    <div class="toolbar-spacer" class:hidden={isAnyOverlayOpen}></div>
-
-    <div class:hidden={isAnyOverlayOpen}>
+    <!-- The view switch sits right after the filter at a FIXED offset (the
+         16px slot margin), so entering or leaving the grouped views never
+         moves the tree/flat buttons. Everything to their right is the
+         elastic zone below. -->
+    <div class="view-group-slot" class:hidden={isAnyOverlayOpen}>
       <div class="view-toggle" role="group" aria-label={$t("tools.viewMode")}>
         <button
           class="view-option"
@@ -169,11 +171,11 @@
       {/if}
     </div>
 
-    <!-- Middle zone: pagination in flat view, the hint in grouped views.
-         Both children stay mounted and share ONE grid cell, so the zone is
-         exactly as wide as the wider of the two — switching views never
-         shifts the neighbouring controls, and the pagination control is
-         never squeezed into a guessed fixed width. -->
+    <!-- Elastic middle zone: pagination in flat view, the hint in grouped
+         views, both stacked in one grid cell and left-aligned. The zone
+         flexes to absorb ALL leftover width, so the controls on either
+         side of it (view switch at a fixed offset, right-hand cluster at
+         the window edge) never move when views or groupings switch. -->
     <div
       class="pagination-zone"
       class:hidden={isAnyOverlayOpen && activeOverlayType !== "pagination"}
@@ -192,7 +194,6 @@
         />
       </div>
     </div>
-    <div class="toolbar-spacer" class:hidden={isAnyOverlayOpen}></div>
 
     <div class:hidden={isAnyOverlayOpen && activeOverlayType !== "columns"}>
       <ColumnToggle {columns} />
@@ -257,15 +258,17 @@
     pointer-events: none;
   }
 
+  /* The view switch sits at a fixed 16px offset from the filter, so
+     entering/leaving the grouped views never moves the tree/flat buttons. */
+  .toolbar-content > .view-group-slot {
+    margin-left: 16px;
+  }
+
   /* The search box is the primary shrink candidate: 200px at rest, down
      to 130px at the window minimum. */
   .toolbar-content > .searchbox-slot {
     flex: 0 1 200px;
     min-width: 130px;
-  }
-
-  .toolbar-spacer {
-    flex: 1;
   }
 
   .ports-button {
@@ -339,16 +342,25 @@
      selector to out-rank `.toolbar-content > div` (flex-shrink: 0). The
      zone is the second shrink candidate: on a too-tight window it clips
      its right edge instead of wrapping the toolbar. */
+  /* Elastic middle zone: absorbs ALL leftover width, so the view switch
+     (fixed offset after the filter) and the right-hand cluster (window
+     edge) stay put across view/grouping switches. Pagination and the
+     grouped-view hint are stacked in one grid cell, left-aligned; on a
+     too-tight window the zone clips its right edge instead of wrapping.
+     Needs the parent-scoped selector to out-rank `.toolbar-content > div`
+     (flex-shrink: 0). */
   .toolbar-content > .pagination-zone {
     display: grid;
-    flex: 0 1 auto;
+    flex: 1 1 0;
     min-width: 0;
     overflow: hidden;
+    margin: 0 16px;
   }
 
   .pagination-zone > * {
     grid-area: 1 / 1;
     min-width: 0;
+    justify-self: start;
   }
 
   /* Icon-only grouping rule inside the tree view, between the view switch

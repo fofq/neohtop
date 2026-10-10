@@ -338,11 +338,19 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    flex-shrink: 0;
+    /* Shrinkable inside the toolbar's elastic pagination zone: at the
+       window minimum the page lines ellipsize instead of overflowing */
+    flex-shrink: 1;
+    min-width: 0;
+    overflow: hidden;
   }
 
   .page-info span {
     display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
   }
 
   .results-info {
