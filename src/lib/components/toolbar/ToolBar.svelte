@@ -10,8 +10,8 @@
   } from "$lib/components";
   import Fa from "svelte-fa";
   import {
-    faCompressArrowsAlt,
-    faExpandArrowsAlt,
+    faAngleDoubleDown,
+    faAngleDoubleUp,
     faCodeBranch,
     faNetworkWired,
     faSitemap,
@@ -152,10 +152,13 @@
             <Fa icon={faLayerGroup} />
           </button>
         </div>
-        <!-- Collapse/expand-all toggle; the icon shows the action performed,
-             mirroring the ports modal's control -->
+        <!-- Collapse/expand-all toggle. The icon shows the ACTION the
+             click performs (double-chevron down = expand all, up = fold
+             all) and the button itself reads "collapsed" (filled style)
+             while every group is folded. -->
         <button
           class="tree-collapse-toggle"
+          class:is-collapsed={treeCollapsedAny}
           on:click={onToggleTreeCollapse}
           title={treeCollapsedAny
             ? $t("tools.expandAll")
@@ -163,10 +166,9 @@
           aria-label={treeCollapsedAny
             ? $t("tools.expandAll")
             : $t("tools.collapseAll")}
+          aria-pressed={treeCollapsedAny}
         >
-          <Fa
-            icon={treeCollapsedAny ? faExpandArrowsAlt : faCompressArrowsAlt}
-          />
+          <Fa icon={treeCollapsedAny ? faAngleDoubleDown : faAngleDoubleUp} />
         </button>
       {/if}
     </div>
@@ -259,9 +261,13 @@
   }
 
   /* The view switch sits at a fixed 16px offset from the filter, so
-     entering/leaving the grouped views never moves the tree/flat buttons. */
+     entering/leaving the grouped views never moves the tree/flat buttons.
+     The slot's own 8px gap mirrors the toolbar gap, which makes the
+     grouping controls' left edge (8 + 16) land EXACTLY where the flat
+     view's pagination control starts (8 + zone margin 16). */
   .toolbar-content > .view-group-slot {
     margin-left: 16px;
+    gap: 8px;
   }
 
   /* The search box is the primary shrink candidate: 200px at rest, down
@@ -363,6 +369,12 @@
     justify-self: start;
   }
 
+  /* The hint stretches across the cell so its ellipsis (not a hard clip)
+     kicks in on a too-tight window. */
+  .pagination-zone > .tree-hint {
+    justify-self: stretch;
+  }
+
   /* Icon-only grouping rule inside the tree view: its 16px left margin
      (matching the pagination zone's margin-left) lands its left edge
      EXACTLY where the flat view's pagination control starts — filter + 8
@@ -372,15 +384,15 @@
     margin-left: 16px;
   }
 
-  /* Icon-only collapse/expand-all beside the view switch, matching the
-     ports modal's control; only rendered in tree view */
+  /* Icon-only collapse/expand-all after the grouping controls: 8px slot
+     gap + 12px margin keeps it comfortably clear of them. */
   .tree-collapse-toggle {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     width: 32px;
     height: 28px;
-    margin-left: 6px;
+    margin-left: 12px;
     padding: 0;
     font-size: 12px;
     color: var(--subtext0);
@@ -394,6 +406,19 @@
   .tree-collapse-toggle:hover {
     color: var(--text);
     background: var(--surface1);
+  }
+
+  /* State, not just hover: while every group is folded the button reads
+     "collapsed" with the active (filled) treatment, and the double-chevron
+     points down for the expand-all action the click performs. */
+  .tree-collapse-toggle.is-collapsed {
+    color: var(--base);
+    background: var(--blue);
+    border-color: var(--blue);
+  }
+
+  .tree-collapse-toggle.is-collapsed:hover {
+    filter: brightness(1.12);
   }
 
   .tree-hint {

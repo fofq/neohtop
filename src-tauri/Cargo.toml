@@ -1,6 +1,6 @@
 [package]
 name = "neohtop"
-version = "1.4.33"
+version = "1.4.34"
 description = "A cross-platform system monitor"
 authors = ["you"]
 edition = "2021"
