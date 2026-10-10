@@ -151,6 +151,10 @@
     } else {
       collapseAllTree();
     }
+    // A manual toggle must restart the idle clock — otherwise the timer
+    // scheduled by the last view/setting change fires mid-usage and folds
+    // the freshly expanded rows back, so the button "never" changes.
+    resetTreeIdleTimer();
   }
 
   // Idle auto-collapse: an open grouped view folds itself after N seconds

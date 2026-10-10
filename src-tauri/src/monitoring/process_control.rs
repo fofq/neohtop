@@ -120,11 +120,37 @@ pub struct AppKillResult {
 /// wrong thing, and refusing is cheaper than mass-killing
 const MAX_APP_KILL_TARGETS: usize = 512;
 
+/// Chromium-style data-directory identity: a process launched with
+/// `--user-data-dir=<dir>` (WebView2 runtimes ALWAYS carry it; browsers
+/// with a custom profile do too) belongs to the application owning that
+/// data directory, NOT to everyone running the same runtime binary —
+/// without it every host's msedgewebview2 processes would collapse into
+/// one kill. The value comes from the parsed argv (immune to spaces in
+/// the path) and is lowercased; empty when absent. Mirrors the frontend's
+/// `identityKeyOf` so the confirmation-dialog count always equals the
+/// kill set.
+fn data_dir_identity_suffix(process: &sysinfo::Process) -> String {
+    let Some(arg) = process
+        .cmd()
+        .iter()
+        .find(|a| a.to_string_lossy().starts_with("--user-data-dir="))
+    else {
+        return String::new();
+    };
+    let value = arg.to_string_lossy();
+    let value = value["--user-data-dir=".len()..].trim();
+    if value.is_empty() {
+        return String::new();
+    }
+    format!("|{}", value.to_lowercase())
+}
+
 /// Executable identity key of a process: the exe path when sysinfo could
-/// read one (non-empty), else the process name, lowercased. `exe()` must
-/// be used here — `root()` is the cwd's drive root on Windows ("/" on
-/// Linux) and would collapse every same-drive process onto one key. The
-/// frontend mirrors this exact `exe || name` fallback in `appFamilyOf`/
+/// read one (non-empty), else the process name, lowercased — plus the
+/// Chromium data-directory segment when the command line carries one.
+/// `exe()` must be used here — `root()` is the cwd's drive root on
+/// Windows ("/" on Linux) and would collapse every same-drive process
+/// onto one key. The frontend mirrors this exact key in `identityKeyOf`/
 /// `buildAppRows`, so the confirmation-dialog count always equals the
 /// backend kill set.
 fn exe_identity_of(process: &sysinfo::Process) -> String {
@@ -132,12 +158,35 @@ fn exe_identity_of(process: &sysinfo::Process) -> String {
         .exe()
         .map(|p| p.to_string_lossy().into_owned())
         .unwrap_or_default();
-    if exe.trim().is_empty() {
+    let base = if exe.trim().is_empty() {
         process.name().to_string_lossy().into_owned()
     } else {
         exe
-    }
-    .to_lowercase()
+    };
+    format!(
+        "{}{}",
+        base.to_lowercase(),
+        data_dir_identity_suffix(process)
+    )
+}
+
+/// Refreshes the whole process table with the same fields the default
+/// refresh covers PLUS the command line (`with_cmd` OnlyIfNotSet: read
+/// once per process, never re-read): the app-family identity needs
+/// `--user-data-dir=` from the command line of processes started after
+/// the initial full refresh too.
+pub fn refresh_process_table(sys: &mut sysinfo::System) {
+    sys.refresh_processes_specifics(
+        sysinfo::ProcessesToUpdate::All,
+        true,
+        sysinfo::ProcessRefreshKind::nothing()
+            .with_memory()
+            .with_cpu()
+            .with_disk_usage()
+            .with_exe(sysinfo::UpdateKind::OnlyIfNotSet)
+            .with_cmd(sysinfo::UpdateKind::OnlyIfNotSet)
+            .with_tasks(),
+    );
 }
 
 /// Kills the entire application of `pid` — the "End Application" equivalent
@@ -233,7 +282,7 @@ pub fn kill_app_family(sys: &mut sysinfo::System, pid: u32) -> Result<AppKillRes
         .map(|d| d.as_secs())
         .unwrap_or(0);
     std::thread::sleep(std::time::Duration::from_millis(1500));
-    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    refresh_process_table(sys);
     let mut respawns: Vec<u32> = sys
         .processes()
         .iter()

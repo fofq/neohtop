@@ -104,7 +104,11 @@ pub async fn kill_app_family(
     state: State<'_, AppState>,
 ) -> Result<AppKillResult, String> {
     let mut sys = state.sys.lock().map_err(|e| e.to_string())?;
-    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    // Refresh with the command line included (the default refresh kind
+    // skips it): the app-family identity reads --user-data-dir from the
+    // command line, and processes forked since the last tick must carry
+    // their host's data directory into the kill-set resolution
+    process_control::refresh_process_table(&mut sys);
     process_control::kill_app_family(&mut sys, pid)
 }
 

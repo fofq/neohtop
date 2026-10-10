@@ -564,27 +564,88 @@ export function buildTreeRows(
 }
 
 /**
+ * Chromium-style data-directory identity: a process launched with
+ * `--user-data-dir=<dir>` (WebView2 runtimes ALWAYS carry it; browsers
+ * with a custom profile do too) belongs to the application that owns
+ * that data directory, NOT to everyone running the same runtime binary —
+ * without it every host's msedgewebview2 processes collapse into one
+ * group and one kill. The value is matched up to the next " --" argument
+ * (a limitation of the joined command string), trimmed of quotes, and
+ * lowercased for keying; empty when absent. The backend's
+ * `exe_identity_of` applies the same rule to its parsed argv, so the
+ * confirmation-dialog count always equals the kill set.
+ */
+function commandDataDir(command: string): string {
+  const marker = "--user-data-dir=";
+  const idx = command.indexOf(marker);
+  if (idx === -1) return "";
+  let value = command.slice(idx + marker.length);
+  const nextArg = value.indexOf(" --");
+  if (nextArg !== -1) value = value.slice(0, nextArg);
+  value = value.trim().replace(/^"|"$/g, "");
+  return value;
+}
+
+/** Full application identity of a process: the executable path (the name
+ * when the exe read was denied) plus, when present, the Chromium data
+ * directory — two hosts embedding the same WebView2 runtime are two
+ * applications. Mirrored by the backend's kill-app-family key. */
+export function identityKeyOf(process: Process): string {
+  const base = (process.exe.trim() ? process.exe : process.name).toLowerCase();
+  const dataDir = commandDataDir(process.command);
+  return dataDir ? `${base}|${dataDir.toLowerCase()}` : base;
+}
+
+/** Human-readable tail disambiguating same-runtime group names. Prefers
+ * the WebView2 host name (`--webview-exe-name=host.exe` — the clearest
+ * label); falls back to the data directory's identifying segment (the one
+ * BEFORE the fixed "EBWebView" leaf on WebView2, the last segment for
+ * anything else); empty when the process carries no --user-data-dir. */
+function dataDirTail(command: string): string {
+  const hostMarker = "--webview-exe-name=";
+  const hostIdx = command.indexOf(hostMarker);
+  if (hostIdx !== -1) {
+    let host = command.slice(hostIdx + hostMarker.length);
+    const nextArg = host.indexOf(" --");
+    if (nextArg !== -1) host = host.slice(0, nextArg);
+    host = host
+      .trim()
+      .replace(/^"|"$/g, "")
+      .replace(/\.(exe|app)$/i, "");
+    if (host) return host;
+  }
+  const dataDir = commandDataDir(command);
+  if (!dataDir) return "";
+  const segments = dataDir.split(/[\\/]/).filter(Boolean);
+  if (segments.length === 0) return "";
+  const last = segments[segments.length - 1];
+  if (segments.length >= 2 && /^ebwebview$/i.test(last)) {
+    return segments[segments.length - 2];
+  }
+  return last;
+}
+
+/**
  * Application scope of `pid`, the "End Application" semantics: EVERY
- * process of the target's session that shares its executable (exe path,
- * case-insensitive; the name when the exe read was denied — mirroring the
- * backend's kill-app-family fallback exactly), regardless of parentage.
- * A process running a *different* executable, or sitting in another
- * session, is never part of the application.
+ * process of the target's session that shares its identity key — the
+ * executable path plus the Chromium data directory when present —
+ * regardless of parentage. A process running a *different* executable,
+ * or one whose data directory (i.e. host application) differs, or sitting
+ * in another session, is never part of the application: ending one
+ * host's embedded WebView2 can no longer kill every other host's.
  */
 export function appFamilyOf(processes: Process[], pid: number): Process[] {
   const target = processes.find((p) => p.pid === pid);
   if (!target) return [];
-  const exeKeyOf = (p: Process) =>
-    (p.exe.trim() ? p.exe : p.name).toLowerCase();
-  const targetKey = exeKeyOf(target);
+  const targetKey = identityKeyOf(target);
   // "End Application" scans the whole snapshot: every process of the
-  // target's session sharing its executable, regardless of parentage —
-  // a launcher-detached instance is still the same application. Unknown
+  // target's session sharing its identity, regardless of parentage — a
+  // launcher-detached instance is still the same application. Unknown
   // session sides are kept (they cannot be judged). The backend
   // kill-app-family applies this exact same rule.
   return processes.filter(
     (p) =>
-      exeKeyOf(p) === targetKey &&
+      identityKeyOf(p) === targetKey &&
       (target.session_id === undefined ||
         p.session_id === undefined ||
         p.session_id === target.session_id),
@@ -629,15 +690,13 @@ export function buildAppRows(
 ): ProcessTreeRow[] {
   const byKey = new Map<string, Process[]>();
   for (const process of visible) {
-    // Application identity = executable + session. The launcher that
-    // started the app (explorer.exe, a service host, ...) is the app's
-    // PARENT, never a member, so no launcher's co-applications bleed
-    // into its row; shared instances (svchost, dotnet, ...) keep one
-    // row per session.
-    const exeKey = (
-      process.exe.trim() ? process.exe : process.name
-    ).toLowerCase();
-    const key = `app:${process.session_id ?? 0}|${exeKey}`;
+    // Application identity = executable + Chromium data directory +
+    // session. The launcher that started the app (explorer.exe, a service
+    // host, ...) is the app's PARENT, never a member, so no launcher's
+    // co-applications bleed into its row; shared runtimes (msedgewebview2,
+    // svchost, dotnet, ...) keep one row per owning application/session
+    // thanks to the --user-data-dir segment of the key.
+    const key = `app:${process.session_id ?? 0}|${identityKeyOf(process)}`;
     const members = byKey.get(key);
     if (members) {
       members.push(process);
@@ -664,8 +723,15 @@ export function buildAppRows(
       knownTime(b) < knownTime(a) ? b : a,
     );
     const rest = members.filter((m) => m.pid !== leader.pid);
+    // Same-runtime groups (msedgewebview2 & friends) carry their host's
+    // data-directory tail so sibling groups are tellable apart — including
+    // single-member groups (a host running just its browser process).
+    const hostTail = dataDirTail(leader.command);
+    const hostSuffix = hostTail ? ` [${hostTail}]` : "";
     const path =
-      rest.length > 0 ? `${leader.name} (${rest.length + 1})` : leader.name;
+      rest.length > 0
+        ? `${leader.name}${hostSuffix} (${rest.length + 1})`
+        : `${leader.name}${hostSuffix}`;
     groups.push({ key, leader, members: rest, path });
   }
 
@@ -679,8 +745,14 @@ export function buildAppRows(
   const rows: ProcessTreeRow[] = [];
   for (const group of groups) {
     if (group.members.length === 0) {
+      // Single-member group: the host tail still disambiguates it from
+      // sibling same-runtime groups (a host running just its browser
+      // process); the leader's real fields stay intact for row actions.
+      const hostTail = dataDirTail(group.leader.command);
       rows.push({
-        process: group.leader,
+        process: hostTail
+          ? { ...group.leader, name: `${group.leader.name} [${hostTail}]` }
+          : group.leader,
         path: group.key,
         depth: 0,
         hasChildren: false,
