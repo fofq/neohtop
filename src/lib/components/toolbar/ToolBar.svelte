@@ -363,10 +363,13 @@
     justify-self: start;
   }
 
-  /* Icon-only grouping rule inside the tree view, between the view switch
-     and the collapse-all button; same look as the view switch */
+  /* Icon-only grouping rule inside the tree view: its 16px left margin
+     (matching the pagination zone's margin-left) lands its left edge
+     EXACTLY where the flat view's pagination control starts — filter + 8
+     gap + 66 view switch + 8 gap + 16 — so switching views hands the
+     pager's spot to the grouping controls instead of reshuffling them. */
   .grouping-toggle {
-    margin-left: 6px;
+    margin-left: 16px;
   }
 
   /* Icon-only collapse/expand-all beside the view switch, matching the
