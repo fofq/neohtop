@@ -89,7 +89,10 @@
 
 <div class="toolbar">
   <div class="toolbar-content" class:overlay-mode={isAnyOverlayOpen}>
-    <div class:hidden={isAnyOverlayOpen && activeOverlayType !== "searchHelp"}>
+    <div
+      class="searchbox-slot"
+      class:hidden={isAnyOverlayOpen && activeOverlayType !== "searchHelp"}
+    >
       <SearchBox bind:searchTerm />
     </div>
 
@@ -118,48 +121,52 @@
           <Fa icon={faList} />
         </button>
       </div>
-      <!-- Rendered always, hidden (space reserved) in flat view so
-           switching views never shifts the neighbouring controls -->
-      <div
-        class="view-toggle grouping-toggle"
-        class:hidden={viewMode !== "tree"}
-        role="group"
-        aria-label={$t("tools.grouping")}
-      >
-        <button
-          class="view-option"
-          class:active={viewMode === "tree" && treeGrouping === "structure"}
-          on:click={() => setTreeGrouping("structure")}
-          title={$t("tools.groupStructure")}
-          aria-pressed={viewMode === "tree" && treeGrouping === "structure"}
+      <!-- Rendered only in tree view: reserving its space in flat view cost
+           ~76px that the 1150px minimum width can no longer spare. The
+           pagination/hint zone keeps a constant width, so a view switch
+           still moves nothing to the right of the view switch. -->
+      {#if viewMode === "tree"}
+        <div
+          class="view-toggle grouping-toggle"
+          role="group"
+          aria-label={$t("tools.grouping")}
         >
-          <Fa icon={faCodeBranch} />
-        </button>
+          <button
+            class="view-option"
+            class:active={treeGrouping === "structure"}
+            on:click={() => setTreeGrouping("structure")}
+            title={$t("tools.groupStructure")}
+            aria-pressed={treeGrouping === "structure"}
+          >
+            <Fa icon={faCodeBranch} />
+          </button>
+          <button
+            class="view-option"
+            class:active={treeGrouping === "app"}
+            on:click={() => setTreeGrouping("app")}
+            title={$t("tools.groupApp")}
+            aria-pressed={treeGrouping === "app"}
+          >
+            <Fa icon={faLayerGroup} />
+          </button>
+        </div>
+        <!-- Collapse/expand-all toggle; the icon shows the action performed,
+             mirroring the ports modal's control -->
         <button
-          class="view-option"
-          class:active={viewMode === "tree" && treeGrouping === "app"}
-          on:click={() => setTreeGrouping("app")}
-          title={$t("tools.groupApp")}
-          aria-pressed={viewMode === "tree" && treeGrouping === "app"}
+          class="tree-collapse-toggle"
+          on:click={onToggleTreeCollapse}
+          title={treeCollapsedAny
+            ? $t("tools.expandAll")
+            : $t("tools.collapseAll")}
+          aria-label={treeCollapsedAny
+            ? $t("tools.expandAll")
+            : $t("tools.collapseAll")}
         >
-          <Fa icon={faLayerGroup} />
+          <Fa
+            icon={treeCollapsedAny ? faExpandArrowsAlt : faCompressArrowsAlt}
+          />
         </button>
-      </div>
-      <!-- Collapse/expand-all toggle; the icon shows the action performed,
-           mirroring the ports modal's control. Space reserved in flat view. -->
-      <button
-        class="tree-collapse-toggle"
-        class:hidden={viewMode !== "tree"}
-        on:click={onToggleTreeCollapse}
-        title={treeCollapsedAny
-          ? $t("tools.expandAll")
-          : $t("tools.collapseAll")}
-        aria-label={treeCollapsedAny
-          ? $t("tools.expandAll")
-          : $t("tools.collapseAll")}
-      >
-        <Fa icon={treeCollapsedAny ? faExpandArrowsAlt : faCompressArrowsAlt} />
-      </button>
+      {/if}
     </div>
 
     <!-- Middle zone: pagination in flat view, the hint in grouped views.
@@ -226,12 +233,13 @@
 
   .toolbar-content {
     display: flex;
-    flex-wrap: wrap;
+    /* Single row, always: at the 1150px window minimum the toolbar just
+       fits (the search box and the pagination/hint zone absorb the squeeze
+       via flex-shrink), so wrapping to a second row is disabled. */
+    flex-wrap: nowrap;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     padding: 0 8px;
-    /* Wraps to a second row at the window's minimum width instead of
-       clipping the right-hand controls */
     min-height: 44px;
     position: relative;
   }
@@ -239,11 +247,21 @@
   .toolbar-content > div {
     display: flex;
     align-items: center;
+    /* Fixed-width controls refuse to shrink; the search slot and the
+       pagination zone opt back in below */
+    flex-shrink: 0;
   }
 
   .toolbar-content :global(.hidden) {
     opacity: 0;
     pointer-events: none;
+  }
+
+  /* The search box is the primary shrink candidate: 200px at rest, down
+     to 130px at the window minimum. */
+  .toolbar-content > .searchbox-slot {
+    flex: 0 1 200px;
+    min-width: 130px;
   }
 
   .toolbar-spacer {
@@ -318,10 +336,14 @@
      zone is exactly as wide as the wider of the two — switching views
      never shifts the neighbouring controls, and the pagination control is
      never squeezed into a guessed fixed width. Needs the parent-scoped
-     selector to out-rank `.toolbar-content > div` (display: flex). */
+     selector to out-rank `.toolbar-content > div` (flex-shrink: 0). The
+     zone is the second shrink candidate: on a too-tight window it clips
+     its right edge instead of wrapping the toolbar. */
   .toolbar-content > .pagination-zone {
     display: grid;
+    flex: 0 1 auto;
     min-width: 0;
+    overflow: hidden;
   }
 
   .pagination-zone > * {

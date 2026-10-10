@@ -251,7 +251,9 @@
 
 <style>
   .search-box {
-    width: 200px;
+    /* Fills the toolbar's searchbox-slot, which flexes 200px -> 130px at
+       the window minimum (single-row toolbar) */
+    width: 100%;
     position: relative;
   }
 

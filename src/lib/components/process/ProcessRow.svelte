@@ -69,9 +69,17 @@
   {#each columns.filter((col) => col.visible) as column}
     <td class="truncate">
       {#if column.id === "name"}
+        <!-- A collapsed parent's whole name cell is clickable (the arrow
+             stays as the keyboard-accessible control) -->
+        <!-- svelte-ignore a11y_click_events_have_key_events -->
+        <!-- svelte-ignore a11y_no_static_element_interactions -->
         <div
           class="name-cell"
+          class:expandable={treeMode && hasChildren}
           style={treeMode ? `padding-left: ${depth * 18}px` : undefined}
+          on:click={() => {
+            if (treeMode && hasChildren) onToggleExpand(expandPath);
+          }}
         >
           {#if treeMode}
             {#if hasChildren}
@@ -205,6 +213,17 @@
     display: flex;
     align-items: center;
     gap: 8px;
+  }
+
+  /* Collapsed/expanded parents: the whole name cell toggles the subtree
+     (the arrow remains the keyboard-accessible control). brightness() so
+     the hover reads even on family-tinted (inline-colored) names. */
+  .name-cell.expandable {
+    cursor: pointer;
+  }
+
+  .name-cell.expandable:hover .process-name {
+    filter: brightness(1.35);
   }
 
   @keyframes startFlash {
